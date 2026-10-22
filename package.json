@@ -1,0 +1,33 @@
+{
+  "name": "safestop-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SafeStop Relay Network: a quiet roadside SOS for Alexa+, as a self-hosted MCP server (Streamable HTTP) plus a simulated Alexa+ web app.",
+  "license": "MIT",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "node --import tsx --test --test-force-exit test/*.test.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "evals": "tsx evals/run.ts",
+    "drill": "tsx scripts/drill.ts",
+    "patrol": "tsx patrol/main.ts",
+    "stopagent": "tsx stops/main.ts"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^1.2.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "express": "^4.21.2",
+    "jose": "^6.1.0",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "undici": "^7.16.0"
+  }
+}

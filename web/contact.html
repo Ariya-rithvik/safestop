@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070A0F">
+<meta name="referrer" content="no-referrer">
+<title>SafeStop · Trusted contact</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/console.css">
+</head>
+<body class="console">
+<div class="app">
+  <section class="stage" aria-label="Map">
+    <div id="map" class="stage-map" role="img" aria-label="Map of her last shared position and any patrol unit"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <header class="hud hud-top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5 13.2 12 15 7-1.8 12-7.5 12-15V7L16 2Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11 16.5 14.5 20 21.5 12.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div><b>SafeStop</b><span id="who">Trusted contact</span></div>
+      </div>
+      <div class="status-pill" id="statusPill"><span class="led"></span><span id="statusText">Connecting…</span></div>
+    </header>
+    <div class="hud hud-metrics" id="metrics"></div>
+  </section>
+
+  <aside class="panel" aria-label="Alert">
+    <button class="primary hidden" id="arm" style="width:100%;margin-bottom:12px">Turn on alarm sound</button>
+    <section class="hero" id="hero">
+      <div class="hero-idle" id="idle">
+        <p class="eyebrow">Standing by</p>
+        <p class="hero-help" style="font-size:15px">Keep this page open. If <b class="tname">your traveller</b> sends a quiet SOS, it rings here and you'll see where she is.</p>
+      </div>
+      <div class="hero-alert hidden" id="alertBox">
+        <div class="alert-head"><span class="alert-dot"></span><div><b id="alertTitle"></b><span id="alertSub"></span></div><span class="timer" id="alertTimer">00:00</span></div>
+        <div id="banner"></div>
+        <button class="ok" id="ack" style="min-height:60px;font-size:18px">I'm on it</button>
+        <p class="faint" style="margin:0">Tapping tells <span class="tname"></span> you've seen it. It doesn't call anyone.</p>
+        <div id="planBox" class="hidden"><p class="eyebrow" style="margin-top:6px">Tell her what you'll do</p><div class="planbtns"><button data-plan="calling_her">I'm calling her</button><button data-plan="going_there">I'm going to her</button><button data-plan="calling_police">I'm calling police</button><button data-plan="other">Other help</button></div></div>
+        <div class="row hero-actions"><a class="call112" href="tel:112">Call 112</a><a class="call112" style="background:#1F2A38;color:#E6EDF3" href="tel:1033">NHAI 1033</a></div>
+      </div>
+    </section>
+
+    <section class="block hidden" id="incident">
+      <div class="block-head"><h2>Where she is</h2><span class="faint" id="whereAge"></span></div>
+      <div id="where"></div>
+      <div class="block-head" style="margin-top:12px"><h2>What she's facing</h2></div>
+      <div id="situation"></div>
+      <div class="block-head" style="margin-top:12px"><h2>Who else knows</h2></div>
+      <ul class="tracker" id="chain"></ul>
+    </section>
+
+    <section class="block hidden" id="feedBlock">
+      <div class="block-head"><h2>Agents at work</h2><span class="faint" id="evidence"></span></div>
+      <ol class="feed" id="timeline"></ol>
+    </section>
+    <footer>SafeStop alerts trusted contacts only; it is not an emergency service. If you call 112, give the location above.</footer>
+  </aside>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/map.js"></script>
+<script>
+(() => {
+  const token = location.pathname.split('/').pop();
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const fmtT = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  let ws, incident = null, traveller = 'your traveller', myName = null, received = new Set(), audio = null, beeper = null, connected = false;
+
+  // Browsers only allow sound after a tap: one tap arms the alarm.
+  $('arm').classList.remove('hidden');
+  $('arm').onclick = () => { audio = new (window.AudioContext || window.webkitAudioContext)(); $('arm').classList.add('hidden'); };
+  const beep = () => { if (!audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 880; o.type = 'square'; g.gain.value = 0.15; o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.35); };
+  const alarm = (on) => {
+    if (on && !beeper) { beep(); navigator.vibrate?.([400, 200, 400]); beeper = setInterval(() => { beep(); navigator.vibrate?.(300); }, 1500); }
+    if (!on && beeper) { clearInterval(beeper); beeper = null; }
+  };
+
+  const send = (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+  const connect = () => {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?role=contact&token=${encodeURIComponent(token)}`);
+    ws.onopen = () => { connected = true; status(); };
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.t === 'hello') { traveller = m.traveller; myName = m.contact; $('who').textContent = `${m.contact} · for ${m.traveller}`; document.querySelectorAll('.tname').forEach((e) => (e.textContent = m.traveller)); }
+      if ((m.t === 'hello' || m.t === 'incident') && m.incident) {
+        incident = m.incident;
+        // "Delivered" is sent only now that this screen really has it.
+        if (incident.status === 'open' && !received.has(incident.id)) { received.add(incident.id); send({ t: 'received' }); }
+        render();
+      }
+      status();
+    };
+    ws.onclose = (e) => { connected = false; status(); if (e.code === 1006 && !incident) $('banner').innerHTML = '<div class="note bad">This link is not valid.</div>'; setTimeout(connect, 2000); };
+  };
+  connect();
+  $('ack').onclick = () => send({ t: 'ack' });
+  document.querySelectorAll('[data-plan]').forEach((b) => (b.onclick = () => {
+    let eta = null;
+    if (b.dataset.plan === 'going_there') { const v = prompt('About how many minutes away are you?', '20'); eta = v && /^\d{1,3}$/.test(v.trim()) ? Number(v) : null; }
+    send({ t: 'plan', action: b.dataset.plan, etaMin: eta });
+  }));
+
+  function status() {
+    const open = incident?.status === 'open';
+    $('statusPill').className = 'status-pill ' + (!connected ? 'off' : open ? 'alert' : 'ok');
+    $('statusText').textContent = !connected ? 'Connecting…' : open ? `${traveller} needs you` : 'Standing by';
+    document.body.classList.toggle('alerting', !!open);
+  }
+
+  // ---------- map ----------
+  const map = SSMap.create('map', [12.9165, 79.1325], 11);
+  map.zoomControl.setPosition('bottomright');
+  SSMap.glowRoute(map);
+  const layer = L.layerGroup().addTo(map);
+  let fittedFor = null;
+  function drawMap(inc) {
+    layer.clearLayers();
+    const l = inc?.location;
+    if (!l) return;
+    const ll = [l.lat, l.lon];
+    L.marker(ll, { icon: SSMap.me(inc.status === 'open'), zIndexOffset: 1000 }).addTo(layer).bindTooltip(`${esc(inc.traveller)} · ${fmtT(l.at)}`, { permanent: true, direction: 'right', className: 'tip' });
+    if (l.accuracyM) L.circle(ll, { radius: l.accuracyM, color: '#FF4D4F', weight: 1, fillOpacity: 0.1 }).addTo(layer);
+    const pts = [ll];
+    for (const a of inc.authorities || []) {
+      if (!a.unitPos || !['prepared', 'dispatched', 'officer_calling'].includes(a.state)) continue;
+      const up = [a.unitPos.lat, a.unitPos.lon], live = a.state === 'dispatched';
+      pts.push(up);
+      L.marker(up, { icon: SSMap.unit(live) }).addTo(layer).bindTooltip(`${String(a.unit).replace(/^Highway patrol /, '')}${live ? ` · dispatched · ~${a.etaMin} min` : ' · prepared'}`, { permanent: live, direction: 'top', className: 'tip' });
+      L.polyline([up, ll], { color: live ? '#3DDC84' : '#6AA8FF', weight: live ? 3 : 2, dashArray: live ? '10 8' : '3 8', className: live ? 'march' : '' }).addTo(layer);
+    }
+    const key = `${inc.id}|${pts.length}`;
+    if (fittedFor !== key) { fittedFor = key; pts.length > 1 ? map.fitBounds(L.latLngBounds(pts), { padding: [90, 90] }) : map.setView(ll, 14); }
+  }
+
+  const steps = (n) => `<span class="steps3">${[0, 1, 2].map((i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
+  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'] };
+  let tick = null;
+  function render() {
+    const inc = incident;
+    const open = inc.status === 'open';
+    const me = inc.contacts.find((c) => c.name === myName);
+    alarm(open && (!me || me.state !== 'acknowledged'));
+    drawMap(inc);
+    $('idle').classList.toggle('hidden', open);
+    $('alertBox').classList.toggle('hidden', !open);
+    $('incident').classList.remove('hidden');
+    $('feedBlock').classList.remove('hidden');
+    clearInterval(tick);
+    if (open) {
+      $('alertTitle').textContent = `${inc.traveller} may need help`;
+      $('alertSub').textContent = `${inc.playbook ? inc.playbook.title + ' · ' : ''}started ${fmtT(inc.createdAt)}`;
+      const t0 = inc.pressedAt || inc.createdAt;
+      const upd = () => { const s = Math.floor((Date.now() - t0) / 1000); $('alertTimer').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+      upd(); tick = setInterval(upd, 1000);
+      $('banner').innerHTML = '';
+    } else {
+      $('idle').innerHTML = inc.safeConfirmedAt
+        ? `<p class="eyebrow">Closed</p><p class="hero-help" style="font-size:16px;color:#BFF0D2">${esc(inc.traveller)} says she is safe (${fmtT(inc.safeConfirmedAt)}).</p>`
+        : `<p class="eyebrow">Closed</p><p class="hero-help" style="font-size:15px">Alert ${esc(inc.status)}${inc.status === 'cancelled' ? ': started by mistake' : ''}. ${esc(inc.traveller)} has not confirmed she is safe.</p>`;
+    }
+    $('ack').disabled = !open || (me && me.state === 'acknowledged');
+    $('planBox').classList.toggle('hidden', !(open && me && me.state === 'acknowledged'));
+    document.querySelectorAll('[data-plan]').forEach((b) => b.classList.toggle('primary', me?.plan?.action === b.dataset.plan));
+    $('ack').textContent = me && me.state === 'acknowledged' ? `${inc.traveller} knows you're on it ✓` : "I'm on it";
+    const l = inc.location;
+    $('whereAge').textContent = l ? `updated ${fmtT(l.at)}` : '';
+    $('where').innerHTML = l
+      ? `<p style="margin:0"><b>${l.lat.toFixed(5)}, ${l.lon.toFixed(5)}</b>${l.accuracyM ? ` · ±${Math.round(l.accuracyM)} m` : ''}</p><p class="faint"><a href="https://www.openstreetmap.org/?mlat=${l.lat}&mlon=${l.lon}#map=16/${l.lat}/${l.lon}" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://www.google.com/maps?q=${l.lat},${l.lon}" target="_blank" rel="noopener">Google Maps</a></p>`
+      : '<p class="muted">No location shared yet.</p>';
+    const facts = Object.entries(inc.facts || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${esc(v)}`).join(' · ');
+    $('situation').innerHTML = inc.playbook ? `<p style="margin:0"><b>${esc(inc.playbook.title)}</b>${inc.severity ? ` <span class="tag">${esc(inc.severity)}</span>` : ''}</p>${facts ? `<p class="muted" style="margin:4px 0">${facts}</p>` : ''}<p class="faint">She was told: ${esc(inc.playbook.say)}</p>` : '<p class="muted">Not said yet.</p>';
+    $('chain').innerHTML = inc.contacts.map((c) => {
+      const n = c.state === 'acknowledged' ? 3 : c.state === 'delivered' ? 2 : 1;
+      const call = c.call ? { calling: 'phoning now', heard: 'heard the call, no yes', no_answer: "didn't answer", failed: 'call failed', confirmed: 'said yes on the call', dry_run: 'would be phoned (dry run)' }[c.call.state] : '';
+      return `<li class="trk ${c.state}"><span class="avatar">${esc(c.name[0])}</span><span class="who"><b>${esc(c.name)}${c.name === myName ? ' (you)' : ''}</b><small>${c.state === 'acknowledged' ? (c.channel === 'call' ? 'On it · by phone' : 'On it') : c.state === 'delivered' ? 'Reached their screen' : 'Sent'}${call ? ` · ${call}` : ''}</small></span>${steps(n)}</li>`;
+    }).join('') + (inc.authorities || []).map((a) => {
+      const n = a.state === 'dispatched' ? 3 : ['prepared', 'officer_calling'].includes(a.state) ? 2 : a.state === 'received' ? 1 : 0;
+      const label = { prepared: `Agent verified in ${a.ackMs} ms · officer deciding`, dispatched: `Officer dispatched ${esc(String(a.unit).replace(/^Highway patrol /, ''))}${a.etaMin ? ` · ~${a.etaMin} min` : ''}`, declined: 'Officer declined', officer_calling: 'Officer calling her', failed: 'Not accepted', received: 'Received', sending: 'Sending…', closed: 'Closed' }[a.state] || a.state;
+      return `<li class="trk auth ${a.state}"><span class="avatar a">P</span><span class="who"><b>${esc(a.name)}</b><small>${label}</small></span>${steps(n)}</li>`;
+    }).join('') + (inc.relay?.enabled ? `<li class="trk"><span class="avatar">N</span><span class="who"><b>Nearby travellers</b><small>${inc.relay.notified} asked · unverified</small></span><span></span></li>` : '');
+    $('metrics').innerHTML = open ? `<span><b>${inc.contacts.filter((c) => c.state !== 'sent').length}/${inc.contacts.length}</b> contacts reached</span>${(inc.authorities || [])[0]?.ackMs != null ? `<span><b>${inc.authorities[0].ackMs} ms</b> patrol agent</span>` : ''}` : '';
+    $('timeline').innerHTML = inc.timeline.slice().reverse().slice(0, 25).map((t) => { const [n, c] = AGENT[t.agent] || [t.agent, '#A9B4C2']; return `<li><span class="agent" style="--c:${c}">${n}</span><span class="what">${esc(t.text)}</span><time>${new Date(t.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</time></li>`; }).join('');
+    $('evidence').textContent = `${inc.evidence.entries} entries · ${inc.evidence.intact ? 'verified' : 'BROKEN'}`;
+    status();
+  }
+})();
+</script>
+</body>
+</html>

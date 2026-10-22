@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0E1116">
+<title>SafeStop · Nearby traveller</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <div class="top"><h1>SafeStop</h1><span class="tag">Nearby traveller</span></div>
+  <p class="muted">If a SafeStop user within 1 km asks for help, you can be told. You never see who they are or exactly where. You are never asked to stop on an empty road.</p>
+
+  <div class="card">
+    <input id="name" type="text" placeholder="Your first name (shown to the person who asked)" maxlength="40" aria-label="Your first name">
+    <select id="locMode" style="margin-top:10px" aria-label="Location source">
+      <option value="device">This device's location</option>
+      <option value="sim:12.9200,79.1325">Simulated: NH48, about 400 m from the Vellore demo spot</option>
+      <option value="sim:12.9240,79.1400">Simulated: NH48, about 1.1 km away (outside the radius)</option>
+      <option value="sim:13.0827,80.2707">Simulated: Chennai</option>
+    </select>
+    <label class="switch" style="margin-top:6px"><span>Let SafeStop ask me</span><input type="checkbox" id="optin"></label>
+    <p class="faint" id="state">Off.</p>
+  </div>
+
+  <div class="card"><div id="map" class="map" role="img" aria-label="Map of your position and the 1 km area SafeStop may ask you about"></div><p class="faint">Only your own position is shown. People who ask for help are never shown on this map.</p></div>
+  <div id="requests"></div>
+  <footer>Never leave your vehicle on an empty stretch for someone you do not know. The safest help is often a call to 112 or waiting at a busy, lit place.</footer>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/map.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let ws, here = null, watch = null;
+  const notices = new Map();
+  try { $('name').value = localStorage.getItem('ss.name') || ''; } catch {}
+
+  const send = (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+  const report = () => {
+    const name = $('name').value.trim();
+    try { localStorage.setItem('ss.name', name); } catch {}
+    if (!here || !name) { $('state').textContent = !name ? 'Add your first name to opt in.' : 'Waiting for location…'; return; }
+    send({ t: 'where', where: here, optIn: $('optin').checked, name });
+    showMe();
+    $('state').textContent = $('optin').checked ? `On · ${name} · ${here.sim ? 'simulated' : 'device'} location ${here.lat.toFixed(4)}, ${here.lon.toFixed(4)}` : 'Off. You will not be asked.';
+  };
+  const map = SSMap.create('map'); SSMap.route(map);
+  let me = null, ring = null;
+  function showMe() {
+    if (!here) return;
+    const ll = [here.lat, here.lon];
+    if (!me) { me = L.marker(ll, { icon: SSMap.dot('#5BE38A', 18) }).addTo(map).bindTooltip('You'); map.setView(ll, 14); } else me.setLatLng(ll);
+    if (ring) ring.remove();
+    if ($('optin').checked) ring = L.circle(ll, { radius: 1000, color: '#5BE38A', weight: 1, fillOpacity: 0.05 }).addTo(map).bindTooltip('SafeStop may ask you about requests inside this 1 km');
+  }
+  const startLoc = () => {
+    if (watch !== null) navigator.geolocation.clearWatch(watch), (watch = null);
+    const v = $('locMode').value;
+    if (v.startsWith('sim:')) { const [a, b] = v.slice(4).split(',').map(Number); here = { lat: a, lon: b, sim: true }; return report(); }
+    watch = navigator.geolocation?.watchPosition((p) => { here = { lat: p.coords.latitude, lon: p.coords.longitude, accuracyM: p.coords.accuracy }; report(); }, () => ($('state').textContent = 'Location unavailable; pick a simulated one.'), { enableHighAccuracy: true, maximumAge: 15000 });
+  };
+  $('locMode').onchange = startLoc; $('optin').onchange = report; $('name').onchange = report;
+  setInterval(report, 60_000); // stay "fresh" while opted in
+  setInterval(() => { let gone = false; for (const [id, n] of notices) if (Date.now() > n.expiresAt) notices.delete(id), (gone = true); if (gone) render(); }, 5000);
+
+  const connect = () => {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?role=helper`);
+    ws.onopen = () => { startLoc(); };
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      // A new connection starts clean: requests from before (e.g. a server restart) are not shown again.
+      if (m.t === 'hello') { notices.clear(); render(); }
+      if (m.t === 'relay') {
+        if (m.notice.closed) notices.delete(m.notice.incidentId);
+        else { notices.set(m.notice.incidentId, m.notice); navigator.vibrate?.([200, 100, 200]); }
+        render();
+      }
+      if (m.t === 'offer_result') $('state').textContent = m.ok ? 'Your message was passed on. Thank you.' : 'That request has ended.';
+    };
+    ws.onclose = () => setTimeout(connect, 2000);
+  };
+  connect();
+
+  const OFFERS = ['I can call 112 for you', 'I am at a fuel station nearby and can wait there', 'I saw a police vehicle a little ahead'];
+  function render() {
+    $('requests').innerHTML = [...notices.values()].map((n) => `
+      <div class="card" data-id="${esc(n.incidentId)}">
+        <div class="banner info" style="margin:0 0 10px">Someone ${esc(n.band)} asked for help</div>
+        <p><span class="tag unverified">Unverified</span> ${n.playbook ? 'Situation: ' + esc(n.playbook) + '.' : ''} Ends ${new Date(n.expiresAt).toLocaleTimeString()}.</p>
+        <p class="muted">Don't stop on an empty stretch. If you can help safely, send a message:</p>
+        <div class="chips">${OFFERS.map((o) => `<button class="chip" data-offer="${esc(o)}">${esc(o)}</button>`).join('')}</div>
+      </div>`).join('');
+    document.querySelectorAll('[data-offer]').forEach((b) => (b.onclick = () => send({ t: 'offer', incidentId: b.closest('[data-id]').dataset.id, text: b.dataset.offer })));
+  }
+})();
+</script>
+</body>
+</html>

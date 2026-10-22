@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Highway Patrol Desk (SIMULATED)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  #map { height: 280px; border-radius: 12px; border: 1px solid var(--line); }
+  :root { --bg: #0D1117; --panel: #161B22; --line: #30363D; --text: #E6EDF3; --muted: #9DA7B3; --blue: #58A6FF; --green: #3FB950; --amber: #D29922; --red: #F85149; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .sim { background: var(--amber); color: #1a1200; font-weight: 800; padding: 4px 10px; border-radius: 6px; font-size: 13px; }
+  main { padding: 16px 20px; display: grid; gap: 14px; max-width: 1100px; margin: 0 auto; }
+  .case { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+  .case.closed { opacity: .55; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--green); border-color: #2a5f35; } .pill.sev { color: var(--red); border-color: #6e2b29; } .pill.blue { color: var(--blue); border-color: #1f4d80; }
+  .agent { border-left: 3px solid var(--blue); padding-left: 10px; }
+  .human { border-left: 3px solid var(--green); padding-left: 10px; }
+  .muted { color: var(--muted); } h1 { font-size: 18px; margin: 0; } h3 { margin: 0; font-size: 16px; }
+  button { font: inherit; font-weight: 700; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: #21262D; color: var(--text); cursor: pointer; min-height: 44px; }
+  button.go { background: var(--green); color: #04220c; border-color: var(--green); } button.no { color: var(--red); }
+  button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  code { font-size: 12px; color: var(--muted); }
+  a { color: var(--blue); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Highway Patrol Desk</h1>
+  <span class="sim">SIMULATED · demo authority · not connected to real police</span>
+</header>
+<main><div id="map" role="img" aria-label="Map of patrol units and alerts"></div></main>
+<main id="cases"><p class="muted">Waiting for alerts from SafeStop (A2A, signed CAP 1.2)…</p></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/desk/map.js"></script>
+<script>
+(() => {
+  const map = SSMap.create('map', [12.75, 78.75], 9);
+  SSMap.route(map);
+  fetch('/desk/units').then((r) => r.json()).then(({ units }) => units.forEach((u) => L.marker([u.lat, u.lon], { icon: SSMap.pin('#58A6FF', u.id.split('-')[1]) }).addTo(map).bindTooltip(u.name)));
+  const caseMarkers = new Map();
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const cases = new Map();
+  const es = new EventSource('/desk/events');
+  es.onmessage = (ev) => {
+    const c = JSON.parse(ev.data); cases.set(c.alert.identifier, c); render();
+    const [lat, lon] = c.alert.info.area.circle[0].split(' ')[0].split(',').map(Number);
+    if (!caseMarkers.has(c.alert.identifier)) { caseMarkers.set(c.alert.identifier, L.marker([lat, lon], { icon: SSMap.dot('#F85149', 20) }).addTo(map)); map.setView([lat, lon], 11); }
+    caseMarkers.get(c.alert.identifier).bindTooltip(c.alert.info.headline + (c.decision ? ' · ' + c.decision.note : ' · officer deciding'));
+  };
+  const decide = (identifier, kind) => fetch('/desk/decide', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identifier, kind }) });
+  function render() {
+    const list = [...cases.values()].sort((a, b) => b.receivedAt - a.receivedAt);
+    document.getElementById('cases').innerHTML = list.map((c) => {
+      const a = c.alert, i = a.info, [ll] = i.area.circle[0].split(' '), [lat, lon] = ll.split(',');
+      const p = c.prepared, d = c.decision;
+      return `<section class="case ${c.closed ? 'closed' : ''}">
+        <div class="row"><h3>${esc(i.headline)}</h3><span class="pill sev">${esc(i.severity)}</span><span class="pill">${esc(a.status)}</span><span class="pill ${c.verified ? 'ok' : ''}">${c.verified ? 'signature verified' : 'unverified'}</span><span class="pill">certainty: ${esc(i.certainty)}</span>${c.closed ? '<span class="pill ok">closed by traveller side</span>' : ''}</div>
+        <div class="muted">${esc(i.description)}</div>
+        <div class="muted">Position ${esc(ll)} · <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}" target="_blank" rel="noopener">map</a> · received ${new Date(c.receivedAt).toLocaleTimeString()} · <code>${esc(a.identifier)}</code></div>
+        <div class="agent"><b>Agent (instant):</b> verified the alert and prepared ${p ? `<b>${esc(p.unit.name)}</b>, about ${p.distanceKm} km, ${p.etaMin} min` : 'no unit'}.</div>
+        <div class="human"><b>Officer (you):</b> ${d ? esc(d.note) + ' <span class="muted">' + new Date(d.at).toLocaleTimeString() + '</span>' : 'not decided yet'}</div>
+        ${c.closed || (d && d.kind !== 'call') ? '' : `<div class="row">
+          <button class="go" data-k="dispatch" data-id="${esc(a.identifier)}">Dispatch ${p ? esc(p.unit.id) : 'unit'}</button>
+          <button data-k="call" data-id="${esc(a.identifier)}">I'm calling her</button>
+          <button class="no" data-k="decline" data-id="${esc(a.identifier)}">Decline (tell her to call 112)</button></div>`}
+      </section>`;
+    }).join('') || '<p class="muted">No alerts.</p>';
+    document.querySelectorAll('button[data-k]').forEach((b) => (b.onclick = () => decide(b.dataset.id, b.dataset.k)));
+  }
+})();
+</script>
+</body>
+</html>

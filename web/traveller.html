@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070A0F">
+<title>SafeStop · Traveller</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/console.css">
+</head>
+<body class="console">
+<div class="app" id="app">
+  <!-- ============ MAP STAGE ============ -->
+  <section class="stage" aria-label="Map">
+    <div id="map" class="stage-map" role="img" aria-label="Map of your road, your position, stops ahead and any patrol unit"></div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="hud hud-top">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5 13.2 12 15 7-1.8 12-7.5 12-15V7L16 2Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11 16.5 14.5 20 21.5 12.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div><b>SafeStop</b><span>Relay Network</span></div>
+      </div>
+      <div class="status-pill" id="statusPill"><span class="led"></span><span id="statusText">Connecting…</span></div>
+    </header>
+
+    <div class="hud hud-metrics" id="metrics" aria-live="polite"></div>
+
+    <div class="hud hud-legend">
+      <span><i class="lg me"></i>You</span>
+      <span><i class="lg stop"></i>Stop (phone answer)</span>
+      <span><i class="lg place"></i>Police / hospital (OSM)</span>
+      <span><i class="lg unit"></i>Patrol unit (simulated)</span>
+    </div>
+
+    <div class="hud hud-sim" title="This page simulates an Alexa+ device. It calls the real SafeStop MCP server, as Alexa+ would.">Simulated Alexa+ · real MCP server</div>
+  </section>
+
+  <!-- ============ CONTROL PANEL ============ -->
+  <aside class="panel" aria-label="SafeStop controls">
+    <div id="outbox"></div>
+
+    <!-- Hero: idle = SOS button; alert = live status -->
+    <section class="hero" id="hero">
+      <div class="hero-idle" id="heroIdle">
+        <p class="eyebrow" id="roadLine">Waiting for your location…</p>
+        <button id="sos" class="sos-orb" aria-label="Quiet SOS, press and hold" aria-describedby="sosHelp">
+          <svg class="sos-progress" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54"/></svg>
+          <span class="sos-label"><b>SOS</b><small>hold</small></span>
+        </button>
+        <p id="sosHelp" class="hero-help">Hold about a second. Your family is alerted silently, nothing is said aloud. Or say your safe word to Alexa.</p>
+      </div>
+      <div class="hero-alert hidden" id="heroAlert">
+        <div class="alert-head">
+          <span class="alert-dot"></span>
+          <div><b id="alertTitle">Alert active</b><span id="alertSub"></span></div>
+          <span class="timer" id="alertTimer">00:00</span>
+        </div>
+        <div id="banner"></div>
+        <div class="row hero-actions">
+          <button class="ok" id="safe">I'm safe</button>
+          <button id="cancel">Cancel (mistake)</button>
+          <a class="call112" href="tel:112">Call 112</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Alexa -->
+    <section class="block" aria-label="Voice assistant">
+      <div class="block-head"><h2>Alexa</h2><span class="tag sim">via MCP</span></div>
+      <div class="alexa">
+        <button id="ring" class="orb" aria-label="Hold to talk to Alexa"><span></span></button>
+        <form class="say" id="sayForm"><input id="sayText" type="text" placeholder="Say something to Alexa…" autocomplete="off" aria-label="Say something to Alexa"><button class="primary" aria-label="Send">Say</button></form>
+      </div>
+      <p id="ringHint" class="faint">Hold the ring to talk · or type</p>
+      <div class="chips" id="chips"></div>
+      <div class="turns hidden" id="turns" aria-live="polite"></div>
+    </section>
+
+    <!-- Who knows -->
+    <section class="block hidden" id="incident" aria-label="Who has your alert">
+      <div class="block-head"><h2>Who knows</h2><span class="faint">sent · reached · on it</span></div>
+      <div id="ladder"></div>
+      <ul class="tracker" id="chain"></ul>
+      <div id="playbook"></div>
+      <div class="block-head" style="margin-top:14px"><h2>Nearby travellers</h2><span class="tag unverified">Unverified</span></div>
+      <label class="switch"><span>Ask SafeStop users within 1 km for 15 min. They never see your name or exact position.</span><input type="checkbox" id="relay"></label>
+      <p class="faint" id="relayInfo"></p>
+      <div id="offers"></div>
+      <div class="block-head" style="margin-top:14px"><h2>Safe places</h2><span class="tag unverified">OSM · unverified</span></div>
+      <div id="places"><p class="muted">Waiting for your location…</p></div>
+    </section>
+
+    <!-- Stops ahead -->
+    <section class="block" aria-label="Stops ahead">
+      <div class="block-head"><h2>Stops ahead</h2><span class="tag">asked once · shared with all</span></div>
+      <div id="stops"><p class="muted">Waiting for your location…</p></div>
+    </section>
+
+    <!-- Agents feed -->
+    <section class="block" aria-label="Agents at work">
+      <div class="block-head"><h2>Agents at work</h2><span class="faint" id="evidence"></span></div>
+      <ol class="feed" id="timeline"><li class="faint">Nothing yet. Ten small agents share one incident record; every step they take appears here.</li></ol>
+    </section>
+
+    <details class="block settings">
+      <summary>Location &amp; demo settings</summary>
+      <select id="locMode" aria-label="Location source">
+        <option value="device">This device's location</option>
+        <option value="sim:12.9165,79.1325">Simulated: NH48 near Vellore</option>
+        <option value="sim:12.7409,77.8253">Simulated: NH44 near Hosur</option>
+        <option value="sim:13.0827,80.2707">Simulated: Chennai</option>
+      </select>
+      <p class="faint" id="locInfo">No location yet.</p>
+      <label class="switch"><span>Speak Alexa's replies</span><input type="checkbox" id="speak" checked></label>
+      <label class="switch"><span>Demo: simulate no signal (dead zone)</span><input type="checkbox" id="nosignal"></label>
+    </details>
+
+    <div id="dialogRoot"></div>
+    <footer>SafeStop alerts the people you chose; it is not an emergency service. In danger, call 112 · National highways 1033.<br>Map © OpenStreetMap contributors (ODbL).</footer>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/map.js"></script>
+<script>
+(() => {
+  const key = decodeURIComponent(location.hash.slice(1));
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const fmtT = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  let ws = null, incident = null, here = null, placesFor = null, connected = false;
+
+  // ---------- status pill ----------
+  function setStatus() {
+    const pill = $('statusPill');
+    const open = incident && incident.status === 'open';
+    pill.className = 'status-pill ' + (!connected ? 'off' : open ? 'alert' : 'ok');
+    $('statusText').textContent = !connected ? (offline() ? 'No signal' : 'Connecting…') : open ? 'Alert active' : 'Protected · all quiet';
+    document.body.classList.toggle('alerting', !!open);
+  }
+
+  // ---------- location ----------
+  let watch = null;
+  const setHere = (lat, lon, acc, sim) => {
+    here = { lat, lon, accuracyM: acc };
+    $('locInfo').textContent = `${sim ? 'Simulated' : 'Device'}: ${lat.toFixed(4)}, ${lon.toFixed(4)}${acc ? ` (±${Math.round(acc)} m)` : ''}`;
+    $('roadLine').textContent = `${sim ? 'Simulated position' : 'Your position'} · ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+    if (incident && incident.status === 'open') send({ t: 'where', where: here });
+    loadPlaces(); loadStops(); showMe(); drawAlertLayer(incident);
+  };
+  const startLoc = () => {
+    if (watch !== null) navigator.geolocation.clearWatch(watch), (watch = null);
+    const v = $('locMode').value;
+    if (v.startsWith('sim:')) { const [a, b] = v.slice(4).split(',').map(Number); return setHere(a, b, 20, true); }
+    if (!navigator.geolocation) return ($('locInfo').textContent = 'This browser has no location.');
+    watch = navigator.geolocation.watchPosition((p) => setHere(p.coords.latitude, p.coords.longitude, p.coords.accuracy, false), (e) => ($('locInfo').textContent = 'Location unavailable: ' + e.message + '. Pick a simulated location.'), { enableHighAccuracy: true, maximumAge: 10000 });
+  };
+  $('locMode').onchange = startLoc;
+  document.addEventListener('change', (e) => { if (e.target && e.target.id === 'nosignal') { if (!e.target.checked) flush(); setStatus(); } });
+
+  // ---------- live link + outbox ----------
+  const offline = () => $('nosignal').checked;
+  const send = (m) => !offline() && ws && ws.readyState === 1 && (ws.send(JSON.stringify(m)), true);
+  const OUT = 'ss.outbox';
+  let pending = (() => { try { return JSON.parse(localStorage.getItem(OUT) || '[]'); } catch { return []; } })();
+  const saveOut = () => { try { localStorage.setItem(OUT, JSON.stringify(pending)); } catch {} };
+  const renderOutbox = () => {
+    $('outbox').innerHTML = pending.length
+      ? `<div class="outbox" role="alert"><b>Saved on your phone · not sent yet</b><span>Pressed ${fmtT(pending[0].pressedAt)}. It goes the moment there is signal. If you can, call 112.</span></div>` : '';
+  };
+  const flush = () => { for (const m of pending) send(m); renderOutbox(); };
+  setInterval(() => pending.length && flush(), 3000);
+  const connect = () => {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?role=traveller&key=${encodeURIComponent(key)}`);
+    ws.onopen = () => { connected = true; setStatus(); };
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.t === 'fact') loadStops(true);
+      if (m.t === 'ack') { pending = pending.filter((x) => x.cid !== m.cid); saveOut(); renderOutbox(); }
+      if (m.t === 'hello') { incident = m.incident; render(); flush(); }
+      if (m.t === 'incident') { incident = m.incident; render(); }
+    };
+    ws.onclose = () => { connected = false; setStatus(); setTimeout(connect, 1500); };
+  };
+  if (key) connect(); else $('outbox').innerHTML = '<div class="outbox"><b>Open this page with your traveller link</b><span>The server prints it (it ends with #tk_…).</span></div>';
+
+  // ---------- quiet SOS (hold) ----------
+  let holdTimer = null;
+  const sosBtn = $('sos');
+  const fire = () => {
+    pending.push({ t: 'sos', cid: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), pressedAt: Date.now(), ...(here ? { where: here } : {}) });
+    saveOut(); flush(); navigator.vibrate?.(60); sosBtn.classList.remove('holding');
+  };
+  sosBtn.addEventListener('pointerdown', (e) => { sosBtn.setPointerCapture(e.pointerId); sosBtn.classList.add('holding'); holdTimer = setTimeout(fire, 1200); });
+  const release = () => { clearTimeout(holdTimer); sosBtn.classList.remove('holding'); };
+  sosBtn.addEventListener('pointerup', release); sosBtn.addEventListener('pointercancel', release);
+  sosBtn.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); sosBtn.classList.add('holding'); holdTimer = setTimeout(fire, 1200); } });
+  sosBtn.addEventListener('keyup', release);
+
+  // ---------- Alexa (simulated) -> /api/assistant -> MCP ----------
+  const turns = $('turns');
+  const addTurn = (said, reply, via) => {
+    turns.classList.remove('hidden');
+    turns.insertAdjacentHTML('afterbegin', `<div class="turn"><div class="you">“${esc(said)}”</div><div class="reply">${esc(reply)}</div>${via ? `<div class="via">${via}</div>` : ''}</div>`);
+    while (turns.children.length > 4) turns.lastChild.remove();
+  };
+  const ask = async (text) => {
+    if (!text.trim()) return;
+    if (offline()) {
+      if (/pineapple|alert my family|help me|sos|बचाओ/i.test(text)) { fire(); addTurn(text, 'No signal. Your alert is saved on this phone and goes the moment there is signal.', 'no network · outbox'); }
+      else addTurn(text, 'No signal right now. Say the safe word or hold SOS and it will be sent when signal returns.');
+      return;
+    }
+    $('ring').classList.add('thinking');
+    try {
+      const r = await fetch('/api/assistant', { method: 'POST', headers: { 'content-type': 'application/json', 'x-traveller-key': key }, body: JSON.stringify({ text, ...(here ? { latitude: here.lat, longitude: here.lon } : {}) }) });
+      const t = await r.json();
+      if (!r.ok) throw new Error(t.error || r.status);
+      addTurn(t.said, t.reply, t.tool ? `MCP · <code>${esc(t.tool)}</code> · ${t.ms} ms` : '');
+      if ($('speak').checked && t.tool !== 'quiet_sos' && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(t.reply); u.lang = 'en-IN'; speechSynthesis.cancel(); speechSynthesis.speak(u); }
+    } catch (e) { addTurn(text, `Alexa could not answer (${e.message}). Use SOS or call 112.`); }
+    finally { $('ring').classList.remove('thinking'); }
+  };
+  $('sayForm').onsubmit = (e) => { e.preventDefault(); const v = $('sayText').value; $('sayText').value = ''; ask(v); };
+  ['Pineapple', 'A car is following me', 'Someone is waving me down', 'Did anyone see it?', 'Is the Indian Oil ahead open?', 'Ask nearby travellers', "I'm safe now"].forEach((c) => {
+    const b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = c; b.onclick = () => ask(c); $('chips').appendChild(b);
+  });
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const ring = $('ring');
+  if (SR) {
+    let rec = null, heard = '';
+    ring.addEventListener('pointerdown', (e) => {
+      ring.setPointerCapture(e.pointerId); heard = '';
+      rec = new SR(); rec.lang = 'en-IN'; rec.interimResults = true;
+      rec.onresult = (ev) => { heard = Array.from(ev.results).map((r) => r[0].transcript).join(' '); $('ringHint').textContent = heard; };
+      rec.onend = () => { ring.classList.remove('listening'); $('ringHint').textContent = 'Hold the ring to talk · or type'; if (heard) ask(heard); };
+      rec.start(); ring.classList.add('listening');
+    });
+    const stop = () => rec && rec.stop();
+    ring.addEventListener('pointerup', stop); ring.addEventListener('pointercancel', stop);
+  } else { $('ringHint').textContent = 'Voice needs Chrome · type instead'; ring.onclick = () => $('sayText').focus(); }
+
+  $('relay').onchange = () => send({ t: 'relay', enable: $('relay').checked });
+  $('safe').onclick = () => send({ t: 'safe' });
+  $('cancel').onclick = () => { if (confirm('Cancel the alert? Your contacts will be told it was a mistake.')) send({ t: 'cancel' }); };
+
+  // ---------- map ----------
+  const map = SSMap.create('map', [12.9165, 79.1325], 12);
+  map.zoomControl.setPosition('bottomright');
+  SSMap.glowRoute(map);
+  const L_ = { stops: L.layerGroup().addTo(map), places: L.layerGroup().addTo(map), alert: L.layerGroup().addTo(map) };
+  let meMarker = null, meCircle = null, followMe = true, fitted = null;
+  map.on('dragstart', () => (followMe = false));
+  function showMe() {
+    if (!here) return;
+    const ll = [here.lat, here.lon];
+    if (!meMarker) { meMarker = L.marker(ll, { icon: SSMap.me(), zIndexOffset: 1000 }).addTo(map).bindTooltip('You'); map.setView(ll, 13); }
+    else { meMarker.setLatLng(ll); if (followMe && incident?.status === 'open') map.panTo(ll); }
+    if (meCircle) meCircle.remove();
+    if (here.accuracyM) meCircle = L.circle(ll, { radius: here.accuracyM, color: '#4C8DFF', weight: 1, fillOpacity: 0.08 }).addTo(map);
+  }
+  function drawAlertLayer(inc) {
+    L_.alert.clearLayers();
+    meMarker?.setIcon(SSMap.me(inc && inc.status === 'open'));
+    if (!inc || inc.status !== 'open' || !here) return;
+    const ll = [here.lat, here.lon];
+    if (inc.relay?.enabled) L.circle(ll, { radius: 1000, color: '#FFC247', weight: 1.5, dashArray: '6 8', fillOpacity: 0.04 }).addTo(L_.alert).bindTooltip('Nearby travellers asked (1 km)');
+    for (const a of inc.authorities || []) {
+      if (!a.unitPos || !['prepared', 'dispatched', 'officer_calling'].includes(a.state)) continue;
+      const up = [a.unitPos.lat, a.unitPos.lon];
+      const live = a.state === 'dispatched';
+      L.marker(up, { icon: SSMap.unit(live) }).addTo(L_.alert).bindTooltip(`${String(a.unit).replace(/^Highway patrol /, '')}${live ? ` · dispatched · ~${a.etaMin} min` : ' · prepared, not dispatched'}`, { permanent: live, direction: 'top', className: 'tip' });
+      L.polyline([up, ll], { color: live ? '#5BE38A' : '#6AA8FF', weight: live ? 3 : 2, dashArray: live ? '10 8' : '3 8', className: live ? 'march' : '' }).addTo(L_.alert);
+      // Keep both her and the unit comfortably on screen (not at the edge), once per dispatch.
+      if (live && fitted !== a.unit) { fitted = a.unit; map.fitBounds(L.latLngBounds([up, ll]), { padding: [90, 90] }); }
+    }
+  }
+
+  // ---------- places (OSM) ----------
+  async function loadPlaces() {
+    if (!incident || incident.status !== 'open' || !here) return;
+    const k = `${here.lat.toFixed(2)},${here.lon.toFixed(2)}`;
+    if (placesFor === k) return;
+    placesFor = k;
+    $('places').innerHTML = '<p class="muted">Looking up OpenStreetMap…</p>';
+    try {
+      const r = await (await fetch(`/api/places?lat=${here.lat}&lon=${here.lon}`)).json();
+      if (r.places === null) { $('places').innerHTML = '<p class="muted">Could not reach OpenStreetMap. Head for the next fuel station or toll plaza.</p>'; placesFor = null; return; }
+      if (!r.places.length) { $('places').innerHTML = '<p class="muted">No police, hospital, fuel or toll plaza mapped within 8 km.</p>'; return; }
+      $('places').innerHTML = r.places.slice(0, 5).map((p) => `<div class="place"><span class="kind ${p.kind}">${esc(p.label)}</span><span class="pname">${p.name !== p.label ? esc(p.name) : ''}</span><a href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=17/${p.lat}/${p.lon}" target="_blank" rel="noopener">${(p.distanceM / 1000).toFixed(1)} km</a></div>`).join('')
+        + `<p class="faint">May be closed or out of date.${r.places[0].asOf && Date.now() - r.places[0].asOf > 600000 ? ` Saved copy from ${new Date(r.places[0].asOf).toLocaleString()}.` : ''}</p>`;
+      L_.places.clearLayers();
+      for (const p of r.places) L.marker([p.lat, p.lon], { icon: SSMap.dot(p.kind === 'police' ? '#6AA8FF' : '#FF94C2', 10) }).addTo(L_.places).bindTooltip(`${p.label}: ${p.name} (OSM, unverified)`);
+    } catch { placesFor = null; }
+  }
+
+  // ---------- stops ahead ----------
+  let stopsFor = null, templates = {};
+  const factLine = (f) => `<div class="fact ${f.answer}"><span class="ans">${{ yes: 'YES', no: 'NO', unknown: '?' }[f.answer]}</span><span>“${esc(f.quote)}”<small>“${esc(f.question)}” · ${f.via === 'agent' ? `<b class="m2m">its AI agent · machine-to-machine · ${f.ms} ms · signed</b>` : 'by phone'} ${fmtT(f.collectedAt)} · valid till ${fmtT(f.expiresAt)}</small></span></div>`;
+  async function loadStops(force) {
+    if (!here) return;
+    const k = `${here.lat.toFixed(3)},${here.lon.toFixed(3)}`;
+    if (stopsFor === k && !force) return;
+    stopsFor = k;
+    const r = await (await fetch(`/api/stops?lat=${here.lat}&lon=${here.lon}`)).json();
+    templates = r.templates || {};
+    L_.stops.clearLayers();
+    if (!r.stops.length) { $('stops').innerHTML = '<p class="muted">No stop near you has registered with SafeStop yet.</p>'; return; }
+    $('stops').innerHTML = r.stops.slice(0, 5).map((s) => {
+      const latest = s.facts[0];
+      const color = latest ? (latest.answer === 'yes' ? '#5BE38A' : latest.answer === 'no' ? '#FF5A4E' : '#FFC247') : '#7D8896';
+      L.marker([s.lat, s.lon], { icon: SSMap.stop(color) }).addTo(L_.stops).bindPopup(`<b>${esc(s.name)}</b> · ${(s.distanceM / 1000).toFixed(1)} km${latest ? factLine(latest) : '<br>Not asked recently'}`);
+      return `<article class="stopcard"><div class="stophead"><span class="sq" style="background:${color}"></span><b>${esc(s.name)}</b><span class="faint">${(s.distanceM / 1000).toFixed(1)} km</span>${s.optIn === 'demo' ? '<span class="tag">demo registration</span>' : ''}${s.hasAgent ? '<span class="tag m2m">has AI agent</span>' : ''}</div>
+        ${s.facts.map(factLine).join('') || '<p class="faint">Not asked recently.</p>'}
+        <div class="chips">${Object.entries(templates).map(([id, t]) => `<button class="chip small" data-stop="${esc(s.id)}" data-q="${id}">${esc(t.short)}</button>`).join('')}</div></article>`;
+    }).join('') + '<p class="faint">What the stop said on the phone, with the time. SafeStop never asks or says whether a place is "safe".</p>';
+    document.querySelectorAll('[data-stop]').forEach((b) => (b.onclick = () => askStop(b.dataset.stop, b.dataset.q)));
+  }
+  async function askStop(stopId, templateId, confirm = false) {
+    const res = await fetch(`/api/stops/${stopId}/ask`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-traveller-key': key }, body: JSON.stringify({ templateId, confirm }) });
+    const r = await res.json();
+    if (r.status === 'needs_confirmation') {
+      const p = r.preview;
+      $('dialogRoot').innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgT"><div>
+        <p class="eyebrow">One call · answer shared with every traveller</p>
+        <h2 id="dlgT">Phone ${esc(p.stop)} once?</h2>
+        <p class="muted">Nobody asked this recently. SafeStop will call ${esc(p.dialling)}:</p>
+        <ol class="script"><li>“${esc(p.opening)}”</li><li>“${esc(p.disclosure)}”</li><li><b>“${esc(p.question)}”</b></li></ol>
+        <p class="faint">One question, then it hangs up. Their exact words and the time are saved.</p>
+        <div class="row"><button class="primary" id="dlgYes">Call once</button><button id="dlgNo">Not now</button></div></div></div>`;
+      $('dlgNo').onclick = () => ($('dialogRoot').innerHTML = '');
+      $('dlgYes').onclick = () => { $('dialogRoot').innerHTML = ''; askStop(stopId, templateId, true); };
+      $('dlgYes').focus();
+      return;
+    }
+    if (r.status === 'answered') { $('stops').insertAdjacentHTML('afterbegin', `<div class="note m2mnote">${esc(r.fact.quote)} · asked its AI agent machine-to-machine in <b>${r.fact.ms} ms</b>, signed. No phone call, nobody disturbed.</div>`); loadStops(true); return; }
+    const msg = { fresh: 'Already answered recently: no call needed.', calling: 'Calling now. The answer appears in about a minute.', in_flight: 'Someone is already asking this; their answer will appear here.' }[r.status] || r.reason;
+    $('stops').insertAdjacentHTML('afterbegin', `<div class="note">${esc(msg)}</div>`);
+    setTimeout(() => loadStops(true), 1500);
+  }
+
+  // ---------- render incident ----------
+  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'] };
+  const steps = (n, labels) => `<span class="steps3">${labels.map((l, i) => `<i class="${i < n ? 'on' : ''}" title="${l}"></i>`).join('')}</span>`;
+  const planText = (p) => !p ? '' : ({ calling_her: 'will call you', going_there: 'is coming to you', calling_police: 'is calling the police', other: 'is helping' }[p.action] + (p.etaMin != null ? ` · ~${p.etaMin} min` : ''));
+  const contactRow = (c) => {
+    const n = c.state === 'acknowledged' ? 3 : c.state === 'delivered' ? 2 : 1;
+    const call = c.call ? { calling: 'Phoning now…', heard: 'Heard the call, didn’t say yes', no_answer: 'Didn’t answer the call', failed: 'Call failed', confirmed: `Said yes on the call${c.call.said ? `: “${esc(c.call.said)}”` : ''}`, dry_run: 'Would be phoned (dry run)' }[c.call.state] : '';
+    const label = c.state === 'acknowledged' ? (c.channel === 'call' ? 'On it · by phone' : 'On it') : c.state === 'delivered' ? 'Reached their screen' : 'Sent';
+    return `<li class="trk ${c.state}"><span class="avatar">${esc(c.name[0])}</span><span class="who"><b>${esc(c.name)}</b><small>${label}${call ? ` · ${call}` : ''}</small>${c.plan ? `<small class="plan">${esc(c.name)} ${planText(c.plan)}</small>` : ''}</span>${steps(n, ['Sent', 'Reached', 'On it'])}</li>`;
+  };
+  const authRow = (a) => {
+    const n = a.state === 'dispatched' ? 3 : ['prepared', 'officer_calling'].includes(a.state) ? 2 : a.state === 'received' ? 1 : 0;
+    const label = { sending: 'Sending signed alert…', received: 'Agent received it', prepared: `Agent verified in ${a.ackMs} ms · ${esc(a.unit || 'unit')} prepared · officer deciding`, officer_calling: 'Officer is calling you', dispatched: `Officer dispatched ${esc(a.unit || 'a unit')}${a.etaMin ? ` · ~${a.etaMin} min` : ''}`, declined: 'Officer declined · call 112', closed: 'Closed', failed: `Not accepted${a.note ? ': ' + esc(a.note) : ''}` }[a.state] || a.state;
+    return `<li class="trk auth ${a.state}"><span class="avatar a">P</span><span class="who"><b>${esc(a.name)}</b><small>${label}</small></span>${steps(n, ['Agent received', 'Prepared', 'Officer decided'])}</li>`;
+  };
+  let tick = null;
+  function render() {
+    const inc = incident;
+    const open = !!inc && inc.status === 'open';
+    setStatus();
+    $('heroIdle').classList.toggle('hidden', open);
+    $('heroAlert').classList.toggle('hidden', !open);
+    $('incident').classList.toggle('hidden', !inc);
+    drawAlertLayer(inc);
+    clearInterval(tick);
+    if (!inc) { $('metrics').innerHTML = ''; return; }
+    // metrics strip over the map
+    const delivered = inc.contacts.filter((c) => c.deliveredAt).map((c) => c.deliveredAt - inc.createdAt);
+    const auth = (inc.authorities || [])[0];
+    $('metrics').innerHTML = [
+      `<span><b>${inc.contacts.length}</b> contacts alerted</span>`,
+      delivered.length ? `<span><b>${Math.max(0, Math.min(...delivered))} ms</b> to first screen</span>` : '',
+      auth?.ackMs != null ? `<span><b>${auth.ackMs} ms</b> patrol agent</span>` : '',
+      `<span><b>${inc.evidence.entries}</b> evidence entries ${inc.evidence.intact ? '✓' : '✗'}</span>`,
+    ].join('');
+    if (open) {
+      $('alertTitle').textContent = inc.playbook ? inc.playbook.title : 'Alert active';
+      $('alertSub').textContent = `started ${fmtT(inc.createdAt)}${inc.severity ? ` · severity ${inc.severity}` : ''}${Object.values(inc.facts || {}).filter(Boolean).length ? ' · ' + Object.values(inc.facts).filter(Boolean).join(' · ') : ''}`;
+      const t0 = inc.pressedAt || inc.createdAt;
+      const upd = () => {
+        const s = Math.floor((Date.now() - t0) / 1000);
+        $('alertTimer').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+        const nx = inc.ladder?.nextAt, anyAck = inc.contacts.some((c) => c.state === 'acknowledged');
+        $('ladder').innerHTML = nx && !anyAck && inc.ladder.state === 'waiting' && nx > Date.now()
+          ? `<div class="ladder"><span>Phoning your first contact in <b>${Math.ceil((nx - Date.now()) / 1000)} s</b> unless someone taps “I'm on it”</span><i style="width:${Math.max(0, 100 - ((nx - Date.now()) / 300))}%"></i></div>`
+          : inc.ladder?.state === 'calling' && !anyAck ? '<div class="ladder calling"><span>Nobody tapped yet · phoning your contacts one by one</span><i style="width:100%"></i></div>' : '';
+      };
+      upd(); tick = setInterval(upd, 500);
+      $('banner').innerHTML = inc.ladder?.state === 'exhausted' && !inc.contacts.some((c) => c.state === 'acknowledged') ? '<div class="note bad">Nobody has confirmed yet. If you are in danger, call 112 now.</div>' : '';
+    } else {
+      $('banner').innerHTML = '';
+      $('outbox').innerHTML = pending.length ? $('outbox').innerHTML : `<div class="closed">${inc.safeConfirmedAt ? 'Last alert closed · you confirmed you are safe.' : `Last alert ${esc(inc.status)}.`} <a href="/report#${encodeURIComponent(key)}">Your private incident report</a></div>`;
+    }
+    $('chain').innerHTML = inc.contacts.map(contactRow).join('') + (inc.authorities || []).map(authRow).join('');
+    const p = inc.playbook;
+    $('playbook').innerHTML = open ? (p
+      ? `<div class="playbook"><p class="eyebrow">Do this now</p><p class="say-now">${esc(p.say)}</p><ol>${p.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="calls">${p.call.map((c) => `<a class="${c.number === '112' ? 'e' : ''}" href="tel:${c.number}">Call ${c.number}</a>`).join('')}</div></div>`
+      : `<div class="playbook"><p class="eyebrow">Do this now</p><p class="say-now">Stay in the car, doors locked. Head for a busy, lit place.</p><div class="calls"><a class="e" href="tel:112">Call 112</a><a href="tel:1033">Call 1033</a></div></div>`) : '';
+    const r = inc.relay;
+    $('relay').checked = !!(r && r.enabled);
+    $('relay').disabled = !open;
+    $('relayInfo').textContent = r ? (r.enabled ? `On until ${fmtT(r.expiresAt)} · asked ${r.notified} nearby ${r.notified === 1 ? 'traveller' : 'travellers'}` : 'Off.') : 'Off.';
+    $('offers').innerHTML = (r?.offers || []).map((o) => `<div class="offer"><span class="tag unverified">Unverified</span> <b>${esc(o.from)}</b>: ${esc(o.text)}<small>Don't leave your car for someone you don't know. Meet only at a busy, lit place.</small></div>`).join('');
+    $('safe').disabled = $('cancel').disabled = !open;
+    $('timeline').innerHTML = inc.timeline.slice().reverse().slice(0, 30).map((t) => { const [n, c] = AGENT[t.agent] || [t.agent, '#A9B4C2']; return `<li><span class="agent" style="--c:${c}">${n}</span><span class="what">${esc(t.text)}</span><time>${new Date(t.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}</time></li>`; }).join('');
+    $('evidence').textContent = `${inc.evidence.entries} evidence entries · hash chain ${inc.evidence.intact ? 'verified' : 'BROKEN'}`;
+    loadPlaces();
+  }
+  startLoc();
+  setStatus();
+})();
+</script>
+</body>
+</html>
