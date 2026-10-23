@@ -82,6 +82,9 @@ const SCENES: Scene[] = [
     await talk(trav, 'Alexa, pineapple. A white Innova, T N zero nine, A B one two three four, is following me.', 'pineapple, a white Innova TN 09 AB 1234 is following me');
     await cont.waitForSelector('#alertBox:not(.hidden)', { timeout: 15000 });
     await say('narrator', "Pineapple is her safe word. Alexa replies on screen only, and her family's phones already have the alert.");
+    await scrollPanel(trav, '#chain');
+    cap('Ready before any human looks: her agent asks the nearest station’s own AI agent, machine to machine: open? staffed?');
+    await say('narrator', "And before anyone has even looked, her agent has asked the nearest station's own agent, in machine language: open, and staffed.");
   } },
   { id: 'machine', run: async ({ trav, desk }) => {
     spot('desk');
@@ -130,11 +133,11 @@ const SCENES: Scene[] = [
     await sleep(800);
   } },
   { id: 'stop', run: async ({ trav }) => {
-    cap('Machine-first: the fuel station runs its own AI agent → asked agent-to-agent, signed, in ms. No phone rings');
+    cap('Machine-first: the station’s own AI agent already answered, agent-to-agent, signed, in ms. No phone rang');
     await scrollPanel(trav, '#stops');
     await talk(trav, 'Alexa, is the Indian Oil ahead open?', 'Is the Indian Oil ahead open?');
     await scrollPanel(trav, '#stops');
-    await say('narrator', 'The station runs its own agent, so SafeStop asks it agent to agent, in milliseconds. No phone rings.');
+    await say('narrator', 'The answer is already there: the two agents settled it, signed, in milliseconds, before she asked. No phone rang.');
   } },
   { id: 'safe', run: async ({ trav }) => {
     cap('Closing takes two requests → a private, tamper-evident report only she can open');
