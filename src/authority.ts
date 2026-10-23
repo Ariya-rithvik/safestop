@@ -41,6 +41,7 @@ export function stateFromTask(t: Pick<Task, 'status'>): { state: AuthorityState;
     case TaskState.TASK_STATE_CANCELED: return { state: 'closed', unit, etaMin, note, unitPos };
     case TaskState.TASK_STATE_FAILED: return { state: 'failed', unit: null, etaMin: null, note, unitPos: null };
     case TaskState.TASK_STATE_WORKING:
+      if (d?.decision?.kind === 'dispatch') return { state: 'dispatched', unit, etaMin, note, unitPos };
       return { state: d?.decision?.kind === 'call' ? 'officer_calling' : d?.stage === 'prepared' ? 'prepared' : 'received', unit, etaMin, note, unitPos };
     default: return { state: 'received', unit, etaMin, note, unitPos };
   }
@@ -71,7 +72,7 @@ export function attachAuthorities(store: Store, o: {
 
   async function send(inc: Incident, url: string) {
     const key = `${inc.id}|${url}`;
-    const fingerprint = `${inc.status}|${inc.playbook}|${inc.severity}|${inc.location?.lat.toFixed(4)},${inc.location?.lon.toFixed(4)}`;
+    const fingerprint = `${inc.status}|${inc.playbook}|${inc.severity}|${inc.location?.lat.toFixed(3)},${inc.location?.lon.toFixed(3)}`;
     if (busy.has(key) || lastSent.get(key) === fingerprint) return;
     let link = linkOf(inc, url);
     const alert = toCap(inc, { sender: o.sender, status: o.status, at: store.now(), first: !link?.taskId });
@@ -142,7 +143,12 @@ export function attachAuthorities(store: Store, o: {
         await new Promise((r) => setTimeout(r, o.pollMs ?? 2000).unref?.());
         const t = await c.getTask({ tenant: '', id: link.taskId }, { serviceParameters: headers });
         const s = stateFromTask(t);
-        if (s.state !== link.state || s.note !== link.note) {
+        const moved = JSON.stringify(s.unitPos) !== JSON.stringify(link.unitPos) || s.etaMin !== link.etaMin;
+        if (moved && s.state === link.state && s.note === link.note) {
+          // The unit is driving: update the map quietly (no timeline line per step).
+          Object.assign(link, s);
+          store.touch(inc.id);
+        } else if (s.state !== link.state || s.note !== link.note) {
           Object.assign(link, s);
           store.timeline(inc, 'authority', `${link.name}: ${s.note || s.state}`);
           addEvidence(inc, store.now(), 'tool', `authority ${link.name}: ${s.state}`);

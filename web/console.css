@@ -31,7 +31,7 @@ body.alerting .vignette { animation: edge 1.6s ease-in-out infinite alternate; }
 .hud-metrics b { color: #fff; font-variant-numeric: tabular-nums; }
 .hud-legend { left: 16px; bottom: 16px; display: flex; gap: 14px; flex-wrap: wrap; white-space: nowrap; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--edge); border-radius: 12px; padding: 8px 12px; font-size: 12px; color: #9AA6B6; max-width: 70%; }
 .lg { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-.lg.me { background: #4C8DFF; } .lg.stop { background: var(--green); border-radius: 3px; } .lg.place { background: #FF94C2; } .lg.unit { background: var(--cyan); }
+.lg.me { background: #4C8DFF; } .lg.stop { background: var(--green); border-radius: 3px; } .lg.place { background: #FF94C2; } .lg.unit { background: var(--cyan); } .lg.fam { background: #5BE38A; }
 .hud-sim { right: 16px; bottom: 64px; font-size: 11.5px; color: var(--cyan); background: var(--glass); border: 1px solid #0E4A57; border-radius: 99px; padding: 5px 10px; }
 
 /* markers */
@@ -46,6 +46,12 @@ body.alerting .vignette { animation: edge 1.6s ease-in-out infinite alternate; }
 .unit-pin { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #0F2A3A; color: var(--cyan); border: 2px solid var(--cyan); }
 .unit-pin.live { background: #0E2F1E; color: var(--green); border-color: var(--green); box-shadow: 0 0 16px rgba(61, 220, 132, 0.7); }
 .unit-pin svg { width: 18px; height: 18px; }
+.car { display: block; width: 34px; height: 34px; transition: transform 0.6s linear; filter: drop-shadow(0 2px 4px rgba(0,0,0,.7)); }
+.car svg { width: 20px; height: 34px; display: block; margin: 0 auto; }
+.car.glow { filter: drop-shadow(0 0 8px var(--c)) drop-shadow(0 2px 4px rgba(0,0,0,.7)); }
+.car-m { transition: transform 0.9s linear; }
+.leaflet-zoom-anim .car-m, .leaflet-dragging .car-m { transition: none; }
+.sim-drive { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #1a1200; background: #FFC247; border-radius: 5px; padding: 1px 6px; }
 .march { animation: march 0.9s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -18; } }
 .leaflet-tooltip, .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #0E141C; color: #E6EDF3; border: 1px solid var(--edge); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }

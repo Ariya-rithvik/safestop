@@ -21,6 +21,8 @@ export interface DeskCase {
   closed: boolean;
   /** The A2A call context the task was stored under (needed to update that same task later). */
   callContext?: ServerCallContext;
+  /** The dispatched (simulated) unit reached her. */
+  arrived?: boolean;
 }
 
 const part = (text: string): Part => ({ content: { $case: 'text', value: text }, metadata: undefined, filename: '', mediaType: 'text/plain' });
@@ -39,7 +41,7 @@ export function nearestUnit(units: Unit[], lat: number, lon: number) {
   return best;
 }
 
-export function createDesk(opts: { port: number; safestopJwks: (refresh?: boolean) => Promise<{ keys: any[] }>; units: Unit[]; token?: string; publicUrl?: string; webDir: string; log?: (m: string) => void }) {
+export function createDesk(opts: { simSpeed?: number; tickMs?: number; port: number; safestopJwks: (refresh?: boolean) => Promise<{ keys: any[] }>; units: Unit[]; token?: string; publicUrl?: string; webDir: string; log?: (m: string) => void }) {
   const log = opts.log ?? (() => {});
   const cases = new Map<string, DeskCase>(); // by CAP identifier
   const listeners = new Set<(c: DeskCase) => void>();
@@ -95,7 +97,7 @@ export function createDesk(opts: { port: number; safestopJwks: (refresh?: boolea
       if (!c.decision) c.prepared = prepared; // after an officer decided, the dispatch is not silently re-planned
       if (alert.msgType === 'Cancel') c.closed = true;
       cases.set(alert.identifier, c);
-      const state = c.closed ? TaskState.TASK_STATE_CANCELED : c.decision?.kind === 'dispatch' ? TaskState.TASK_STATE_COMPLETED : c.decision?.kind === 'decline' ? TaskState.TASK_STATE_REJECTED : TaskState.TASK_STATE_WORKING;
+      const state = c.closed ? TaskState.TASK_STATE_CANCELED : c.decision?.kind === 'dispatch' ? (c.arrived ? TaskState.TASK_STATE_COMPLETED : TaskState.TASK_STATE_WORKING) : c.decision?.kind === 'decline' ? TaskState.TASK_STATE_REJECTED : TaskState.TASK_STATE_WORKING;
       const text = c.closed
         ? 'Alert closed by the traveller side. Desk case closed.'
         : `Received and verified. Prepared: nearest unit ${prepared?.unit.name ?? 'none'}${prepared ? `, about ${prepared.distanceKm} km, ${prepared.etaMin} min` : ''}. Waiting for the desk officer to decide.`;
@@ -121,14 +123,45 @@ export function createDesk(opts: { port: number; safestopJwks: (refresh?: boolea
     c.decision = { kind, at: Date.now(), note };
     const task = c.callContext ? ((await taskStore.load(c.taskId, c.callContext)) as Task | undefined) : undefined;
     if (task) {
-      const state = kind === 'dispatch' ? TaskState.TASK_STATE_COMPLETED : kind === 'decline' ? TaskState.TASK_STATE_REJECTED : TaskState.TASK_STATE_WORKING;
+      // A dispatch stays WORKING while the unit drives (its position keeps updating); COMPLETED on arrival.
+      const state = kind === 'decline' ? TaskState.TASK_STATE_REJECTED : TaskState.TASK_STATE_WORKING;
       task.status = { state, timestamp: new Date().toISOString(), message: agentMsg(c.taskId, c.contextId, [part(note), dataPart({ stage: 'decided', decision: c.decision, prepared: c.prepared })]) };
       if (kind === 'dispatch') task.artifacts = [{ artifactId: crypto.randomUUID(), name: 'dispatch', description: 'Officer decision', parts: [dataPart({ unit: c.prepared?.unit, etaMin: c.prepared?.etaMin, by: 'desk officer (demo)' })], metadata: undefined, extensions: [] }];
       await taskStore.save(task, c.callContext!);
     }
     changed(c);
     log(`officer: ${kind} on ${identifier}`);
+    if (kind === 'dispatch') drive(c);
     return true;
+  }
+
+  /** SIMULATED: the dispatched unit drives straight toward her latest position (60 km/h x simSpeed). */
+  function drive(c: DeskCase) {
+    const tick = opts.tickMs ?? 2000;
+    const speed = opts.simSpeed ?? 1;
+    const t = setInterval(async () => {
+      if (c.closed || !c.prepared) return clearInterval(t);
+      const [lat, lon] = c.alert.info.area.circle[0].split(' ')[0].split(',').map(Number);
+      const u = c.prepared.unit;
+      const leftKm = distanceM({ lat, lon }, u) / 1000;
+      const stepKm = (60 * speed * tick) / 3_600_000;
+      if (leftKm <= Math.max(0.08, stepKm)) {
+        c.prepared = { unit: { ...u, lat, lon }, distanceKm: 0, etaMin: 0 };
+        c.arrived = true;
+        clearInterval(t);
+      } else {
+        const f = stepKm / leftKm;
+        c.prepared = { unit: { ...u, lat: u.lat + (lat - u.lat) * f, lon: u.lon + (lon - u.lon) * f }, distanceKm: Math.round((leftKm - stepKm) * 10) / 10, etaMin: Math.max(1, Math.round(((leftKm - stepKm) * 1.3 / 60) * 60)) };
+      }
+      const task = c.callContext ? ((await taskStore.load(c.taskId, c.callContext)) as Task | undefined) : undefined;
+      if (task) {
+        const note = c.arrived ? `${u.name} has reached her.` : c.decision!.note;
+        task.status = { state: c.arrived ? TaskState.TASK_STATE_COMPLETED : TaskState.TASK_STATE_WORKING, timestamp: new Date().toISOString(), message: agentMsg(c.taskId, c.contextId, [part(note), dataPart({ stage: c.arrived ? 'arrived' : 'decided', decision: c.decision, prepared: c.prepared })]) };
+        await taskStore.save(task, c.callContext!);
+      }
+      changed(c);
+    }, tick);
+    t.unref?.();
   }
 
   const app = express();

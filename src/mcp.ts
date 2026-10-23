@@ -129,7 +129,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
   }, async ({ latitude, longitude }) => {
     const places = await deps.places(latitude, longitude);
     // Answers stops gave on the phone (shared by every traveller who asked before) come first.
-    const confirmed = (deps.facts?.near(latitude, longitude, 15_000) ?? []).flatMap((s) => s.facts.filter((f) => f.answer === 'yes').slice(0, 1).map((f) => `${s.name}, ${(s.distanceM / 1000).toFixed(1)} km: asked "${f.question}" by phone at ${new Date(f.collectedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}, they said "${f.quote}"`));
+    const confirmed = (deps.facts?.near(latitude, longitude, 15_000) ?? []).flatMap((s) => s.facts.filter((f) => f.answer === 'yes').slice(0, 1).map((f) => `${s.name}, ${(s.distanceM / 1000).toFixed(1)} km: asked "${f.question}" ${f.via === 'agent' ? "via its own AI agent" : 'by phone'} at ${new Date(f.collectedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}, they said "${f.quote}"`));
     if (confirmed.length && (places === null || !places.length)) return reply(`Confirmed by phone: ${confirmed.slice(0, 2).join('; ')}.`, { confirmed });
     if (places === null) return reply('I could not look up places right now. Head for the next fuel station or toll plaza on your route.', { places: null });
     if (!places.length) return reply('OpenStreetMap shows no police station, hospital, fuel station or toll plaza within 8 km.', { places: [] });
@@ -158,7 +158,7 @@ export function buildMcpServer(deps: McpDeps): McpServer {
     const when = (t: number) => new Date(t).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     switch (r.status) {
       case 'answered': return reply(`${s.name}'s own AI agent answered machine-to-machine in ${r.fact.ms} ms: "${r.fact.quote}" No phone call needed.`, { fact: r.fact, stop: s.name, via: 'agent' });
-      case 'fresh': return reply(`${s.name} was asked "${r.fact.question}" by phone at ${when(r.fact.collectedAt)} and said: "${r.fact.quote}". No new call needed.`, { fact: r.fact, stop: s.name });
+      case 'fresh': return reply(`${s.name} was asked "${r.fact.question}" ${r.fact.via === 'agent' ? "via its own AI agent" : 'by phone'} at ${when(r.fact.collectedAt)} and said: "${r.fact.quote}". Still fresh, so nobody is asked again.`, { fact: r.fact, stop: s.name });
       case 'needs_confirmation': return reply(`Nobody has asked ${s.name} that recently. Should I phone them once and ask "${r.preview.question}"? The answer will be shared with other travellers.`, { preview: r.preview, confirmationNeeded: true });
       case 'calling': return reply(`Calling ${s.name} now. The answer usually takes about a minute.`, { calling: true, callId: r.callId });
       case 'in_flight': return reply(`Someone is already asking ${s.name} that right now; I'll use their answer.`, { inFlight: true });

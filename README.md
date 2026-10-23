@@ -115,6 +115,12 @@ A contact saying "yes" is not enough for someone stuck on a highway; she needs t
 - **She sees it:** "Meena is coming to you · ~20 min", and Alexa says the same when she asks "did anyone see it?".
 - **Per-person calling rules:** each contact can be called in their own language (`CONTACT_LANGS=Ravi:ta-IN`), and only a contact who acknowledged can set a plan.
 
+## Everyone sees everyone on the map
+- Priya's car, red while the alert is open, rotated to her heading.
+- Each contact who taps "I'm going to her" can share their position. It shows as a green car with a live distance ("Meena · 30 m away") on her map, on every contact's map and in the tracker. It is shared only after that choice, and only while the alert is open (`store.contactWhere`).
+- The patrol unit, once an officer dispatches it, drives toward her latest signed position. The desk's A2A task carries its position, and SafeStop follows it (simulated at `PATROL_SIM_SPEED`).
+- Demo option: "Simulated drive: NH48 into Vellore" moves her along the real OSRM route, clearly labelled SIMULATED DRIVE.
+
 ## Agents talking to agents: the highway patrol desk
 
 Phoning people takes 30–120 seconds because a human has to pick up. Machines can answer in milliseconds, so SafeStop's agent also talks **directly to an authority's agent**, before any human there gets involved:

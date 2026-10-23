@@ -37,7 +37,12 @@
         <div id="banner"></div>
         <button class="ok" id="ack" style="min-height:60px;font-size:18px">I'm on it</button>
         <p class="faint" style="margin:0">Tapping tells <span class="tname"></span> you've seen it. It doesn't call anyone.</p>
-        <div id="planBox" class="hidden"><p class="eyebrow" style="margin-top:6px">Tell her what you'll do</p><div class="planbtns"><button data-plan="calling_her">I'm calling her</button><button data-plan="going_there">I'm going to her</button><button data-plan="calling_police">I'm calling police</button><button data-plan="other">Other help</button></div></div>
+        <div id="planBox" class="hidden"><p class="eyebrow" style="margin-top:6px">Tell her what you'll do</p><div class="planbtns"><button data-plan="calling_her">I'm calling her</button><button data-plan="going_there">I'm going to her</button><button data-plan="calling_police">I'm calling police</button><button data-plan="other">Other help</button></div>
+          <div id="shareBox" class="hidden" style="margin-top:10px">
+            <label class="switch"><span>Share my position with her while I drive</span><input type="checkbox" id="share"></label>
+            <select id="shareMode" aria-label="Where my position comes from"><option value="sim">Simulated drive from Vellore (demo)</option><option value="device">This device's location</option></select>
+            <p class="faint" id="shareInfo">Only she and her other contacts see it, until the alert closes.</p>
+          </div></div>
         <div class="row hero-actions"><a class="call112" href="tel:112">Call 112</a><a class="call112" style="background:#1F2A38;color:#E6EDF3" href="tel:1033">NHAI 1033</a></div>
       </div>
     </section>
@@ -109,29 +114,73 @@
     document.body.classList.toggle('alerting', !!open);
   }
 
+  // ---------- sharing my position while I drive to her ----------
+  let shareT = null, watchId = null, track = null, myD = null;
+  const stopShare = () => { clearInterval(shareT); shareT = null; if (watchId !== null) navigator.geolocation.clearWatch(watchId); watchId = null; };
+  const startShare = async () => {
+    stopShare();
+    if ($('shareMode').value === 'device') {
+      if (!navigator.geolocation) return ($('shareInfo').textContent = 'This browser has no location.');
+      watchId = navigator.geolocation.watchPosition((p) => send({ t: 'where', where: { lat: p.coords.latitude, lon: p.coords.longitude, accuracyM: p.coords.accuracy } }), (e) => ($('shareInfo').textContent = 'Location unavailable: ' + e.message));
+      $('shareInfo').textContent = 'Sharing this device’s location.';
+      return;
+    }
+    // SIMULATED: start 12 km further along her road (towards Vellore) and drive back towards her.
+    track = track || (await SSMap.routeTrack());
+    const her = incident?.location;
+    if (!track.pts.length || !her) return;
+    myD ??= Math.min(track.length, track.nearest([her.lat, her.lon]) + 12);
+    $('shareInfo').innerHTML = '<span class="sim-drive">SIMULATED DRIVE</span> demo speed, along the real NH48 route.';
+    const step = () => {
+      const h = incident?.location;
+      if (!h || incident.status !== 'open') return stopShare();
+      const target = track.nearest([h.lat, h.lon]);
+      const gap = target - myD;
+      if (Math.abs(gap) > 0.05) myD += Math.sign(gap) * Math.min(Math.abs(gap) - 0.05, 0.15);
+      const p = track.at(myD);
+      send({ t: 'where', where: { lat: p.ll[0], lon: p.ll[1], accuracyM: 15 } });
+    };
+    step();
+    shareT = setInterval(step, 1000);
+  };
+  $('share').onchange = () => ($('share').checked ? startShare() : stopShare());
+  $('shareMode').onchange = () => $('share').checked && startShare();
+
   // ---------- map ----------
   const map = SSMap.create('map', [12.9165, 79.1325], 11);
   map.zoomControl.setPosition('bottomright');
   SSMap.glowRoute(map);
   const layer = L.layerGroup().addTo(map);
+  const cars = SSMap.fleet(map);
   let fittedFor = null;
   function drawMap(inc) {
     layer.clearLayers();
     const l = inc?.location;
-    if (!l) return;
+    if (!l) return void cars.sweep();
     const ll = [l.lat, l.lon];
-    L.marker(ll, { icon: SSMap.me(inc.status === 'open'), zIndexOffset: 1000 }).addTo(layer).bindTooltip(`${esc(inc.traveller)} · ${fmtT(l.at)}`, { permanent: true, direction: 'right', className: 'tip' });
+    const open = inc.status === 'open';
+    cars.set('her', ll, open ? '#FF4D4F' : '#4C8DFF', { glow: open, z: 1000, permanent: true, tip: `${esc(inc.traveller)} · ${fmtT(l.at)}` });
+    for (const c of inc.contacts) {
+      if (!open || !c.pos || c.plan?.action !== 'going_there') continue;
+      const cp = [c.pos.lat, c.pos.lon], dk = SSMap.km(cp, ll);
+      cars.set('c:' + c.contactId, cp, '#5BE38A', { glow: true, z: 800, permanent: true, tip: `${c.name === myName ? 'You' : esc(c.name)} · ${dk < 1 ? Math.round(dk * 1000) + ' m' : dk.toFixed(1) + ' km'} to ${esc(inc.traveller)}` });
+      L.polyline([cp, ll], { color: '#5BE38A', weight: 2.5, opacity: 0.8, dashArray: '2 9', className: 'march' }).addTo(layer);
+    }
     if (l.accuracyM) L.circle(ll, { radius: l.accuracyM, color: '#FF4D4F', weight: 1, fillOpacity: 0.1 }).addTo(layer);
     const pts = [ll];
     for (const a of inc.authorities || []) {
       if (!a.unitPos || !['prepared', 'dispatched', 'officer_calling'].includes(a.state)) continue;
       const up = [a.unitPos.lat, a.unitPos.lon], live = a.state === 'dispatched';
       pts.push(up);
-      L.marker(up, { icon: SSMap.unit(live) }).addTo(layer).bindTooltip(`${String(a.unit).replace(/^Highway patrol /, '')}${live ? ` · dispatched · ~${a.etaMin} min` : ' · prepared'}`, { permanent: live, direction: 'top', className: 'tip' });
+      cars.set('u:' + a.unit, up, live ? '#2FD3F5' : '#6AA8FF', { glow: live, z: 900, permanent: live, tip: `${esc(String(a.unit).replace(/^Highway patrol /, ''))}${live ? (a.etaMin === 0 ? ' · reached her' : ` · dispatched · ~${a.etaMin} min`) : ' · prepared'}` });
       L.polyline([up, ll], { color: live ? '#3DDC84' : '#6AA8FF', weight: live ? 3 : 2, dashArray: live ? '10 8' : '3 8', className: live ? 'march' : '' }).addTo(layer);
     }
+    cars.sweep();
+    const mine = inc.contacts.find((c) => c.name === myName);
+    if (mine?.pos && open) pts.push([mine.pos.lat, mine.pos.lon]);
     const key = `${inc.id}|${pts.length}`;
     if (fittedFor !== key) { fittedFor = key; pts.length > 1 ? map.fitBounds(L.latLngBounds(pts), { padding: [90, 90] }) : map.setView(ll, 14); }
+    else if (open && !map.getBounds().pad(-0.2).contains(ll)) map.panTo(ll);
   }
 
   const steps = (n) => `<span class="steps3">${[0, 1, 2].map((i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
@@ -162,6 +211,8 @@
     }
     $('ack').disabled = !open || (me && me.state === 'acknowledged');
     $('planBox').classList.toggle('hidden', !(open && me && me.state === 'acknowledged'));
+    $('shareBox').classList.toggle('hidden', !(open && me?.plan?.action === 'going_there'));
+    if (!open && shareT) { stopShare(); $('share').checked = false; }
     document.querySelectorAll('[data-plan]').forEach((b) => b.classList.toggle('primary', me?.plan?.action === b.dataset.plan));
     $('ack').textContent = me && me.state === 'acknowledged' ? `${inc.traveller} knows you're on it ✓` : "I'm on it";
     const l = inc.location;

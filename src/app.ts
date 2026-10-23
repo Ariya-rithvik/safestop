@@ -59,6 +59,7 @@ const TravellerMsg = z.discriminatedUnion('t', [
 const ContactMsg = z.discriminatedUnion('t', [
   z.object({ t: z.literal('received') }).strict(),
   z.object({ t: z.literal('ack') }).strict(),
+  z.object({ t: z.literal('where'), where: loc }).strict(),
   z.object({ t: z.literal('plan'), action: z.enum(['calling_her', 'going_there', 'calling_police', 'other']), etaMin: z.number().int().min(0).max(600).nullable().optional() }).strict(),
 ]);
 const HelperMsg = z.discriminatedUnion('t', [
@@ -276,7 +277,8 @@ export function createApp(opts: AppOptions) {
         const m = parse(ContactMsg, d);
         if (!m) return;
         // "delivered" only when this screen says it received the alert, never just because we sent it.
-        if (m.t === 'plan') store.plan(token, m.action, m.etaMin ?? null);
+        if (m.t === 'where') store.contactWhere(token, m.where);
+        else if (m.t === 'plan') store.plan(token, m.action, m.etaMin ?? null);
         else store.contact(token, m.t === 'received' ? 'delivered' : 'acknowledged');
       });
       ws.on('close', () => contacts.delete(ws));

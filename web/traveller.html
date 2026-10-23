@@ -31,6 +31,7 @@
       <span><i class="lg stop"></i>Stop (phone answer)</span>
       <span><i class="lg place"></i>Police / hospital (OSM)</span>
       <span><i class="lg unit"></i>Patrol unit (simulated)</span>
+      <span><i class="lg fam"></i>Family on the way</span>
     </div>
 
     <div class="hud hud-sim" title="This page simulates an Alexa+ device. It calls the real SafeStop MCP server, as Alexa+ would.">Simulated Alexa+ · real MCP server</div>
@@ -107,6 +108,7 @@
       <summary>Location &amp; demo settings</summary>
       <select id="locMode" aria-label="Location source">
         <option value="device">This device's location</option>
+        <option value="drive">Simulated drive: NH48 into Vellore (demo speed)</option>
         <option value="sim:12.9165,79.1325">Simulated: NH48 near Vellore</option>
         <option value="sim:12.7409,77.8253">Simulated: NH44 near Hosur</option>
         <option value="sim:13.0827,80.2707">Simulated: Chennai</option>
@@ -144,14 +146,33 @@
   let watch = null;
   const setHere = (lat, lon, acc, sim) => {
     here = { lat, lon, accuracyM: acc };
-    $('locInfo').textContent = `${sim ? 'Simulated' : 'Device'}: ${lat.toFixed(4)}, ${lon.toFixed(4)}${acc ? ` (±${Math.round(acc)} m)` : ''}`;
-    $('roadLine').textContent = `${sim ? 'Simulated position' : 'Your position'} · ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+    const what = sim === 'drive' ? 'Simulated drive' : sim ? 'Simulated' : 'Device';
+    $('locInfo').textContent = `${what}: ${lat.toFixed(4)}, ${lon.toFixed(4)}${acc ? ` (±${Math.round(acc)} m)` : ''}`;
+    $('roadLine').innerHTML = `${sim ? 'Simulated position' : 'Your position'} · ${lat.toFixed(3)}, ${lon.toFixed(3)}${sim === 'drive' ? '<span class="sim-drive">SIMULATED DRIVE</span>' : ''}`;
     if (incident && incident.status === 'open') send({ t: 'where', where: here });
     loadPlaces(); loadStops(); showMe(); drawAlertLayer(incident);
   };
+  // Demo: drive the real OSRM route into Vellore at demo speed, so everyone's map shows a moving car.
+  let driveT = null, track = null;
+  const startDrive = async () => {
+    track = track || (await SSMap.routeTrack());
+    if (!track.pts.length) return;
+    let d = Math.max(0, track.length - 28);
+    const step = () => {
+      const p = track.at(d);
+      heading = p.heading;
+      setHere(p.ll[0], p.ll[1], 15, 'drive');
+      if (d >= track.length) clearInterval(driveT);
+      d = Math.min(track.length, d + 0.1);
+    };
+    step();
+    driveT = setInterval(step, 1000);
+  };
   const startLoc = () => {
     if (watch !== null) navigator.geolocation.clearWatch(watch), (watch = null);
+    clearInterval(driveT);
     const v = $('locMode').value;
+    if (v === 'drive') return void startDrive();
     if (v.startsWith('sim:')) { const [a, b] = v.slice(4).split(',').map(Number); return setHere(a, b, 20, true); }
     if (!navigator.geolocation) return ($('locInfo').textContent = 'This browser has no location.');
     watch = navigator.geolocation.watchPosition((p) => setHere(p.coords.latitude, p.coords.longitude, p.coords.accuracy, false), (e) => ($('locInfo').textContent = 'Location unavailable: ' + e.message + '. Pick a simulated location.'), { enableHighAccuracy: true, maximumAge: 10000 });
@@ -250,31 +271,44 @@
   map.zoomControl.setPosition('bottomright');
   SSMap.glowRoute(map);
   const L_ = { stops: L.layerGroup().addTo(map), places: L.layerGroup().addTo(map), alert: L.layerGroup().addTo(map) };
-  let meMarker = null, meCircle = null, followMe = true, fitted = null;
+  let meMarker = null, meCircle = null, followMe = true, fitted = null, heading = null;
+  const cars = SSMap.fleet(map);
   map.on('dragstart', () => (followMe = false));
   function showMe() {
     if (!here) return;
     const ll = [here.lat, here.lon];
-    if (!meMarker) { meMarker = L.marker(ll, { icon: SSMap.me(), zIndexOffset: 1000 }).addTo(map).bindTooltip('You'); map.setView(ll, 13); }
-    else { meMarker.setLatLng(ll); if (followMe && incident?.status === 'open') map.panTo(ll); }
+    const first = !meMarker;
+    const alert = incident?.status === 'open';
+    meMarker = cars.set('me', ll, alert ? '#FF4D4F' : '#4C8DFF', { glow: alert, z: 1000, heading: heading ?? undefined, tip: 'You' });
+    if (first) map.setView(ll, 13);
+    else if (followMe && !map.getBounds().pad(-0.25).contains(ll)) map.panTo(ll);
     if (meCircle) meCircle.remove();
     if (here.accuracyM) meCircle = L.circle(ll, { radius: here.accuracyM, color: '#4C8DFF', weight: 1, fillOpacity: 0.08 }).addTo(map);
   }
   function drawAlertLayer(inc) {
     L_.alert.clearLayers();
-    meMarker?.setIcon(SSMap.me(inc && inc.status === 'open'));
-    if (!inc || inc.status !== 'open' || !here) return;
+    showMe();
+    if (!inc || inc.status !== 'open' || !here) { cars.sweep(); return; }
     const ll = [here.lat, here.lon];
+    // Family members who said "I'm going to her" and share their position: a green car each.
+    for (const c of inc.contacts) {
+      if (!c.pos || c.plan?.action !== 'going_there') continue;
+      const cp = [c.pos.lat, c.pos.lon], dk = SSMap.km(cp, ll);
+      cars.set('c:' + c.contactId, cp, '#5BE38A', { glow: true, z: 800, permanent: true, tip: `${esc(c.name)} · ${dk < 1 ? Math.round(dk * 1000) + ' m' : dk.toFixed(1) + ' km'} away` });
+      L.polyline([cp, ll], { color: '#5BE38A', weight: 2.5, opacity: 0.8, dashArray: '2 9', className: 'march' }).addTo(L_.alert);
+    }
     if (inc.relay?.enabled) L.circle(ll, { radius: 1000, color: '#FFC247', weight: 1.5, dashArray: '6 8', fillOpacity: 0.04 }).addTo(L_.alert).bindTooltip('Nearby travellers asked (1 km)');
     for (const a of inc.authorities || []) {
       if (!a.unitPos || !['prepared', 'dispatched', 'officer_calling'].includes(a.state)) continue;
       const up = [a.unitPos.lat, a.unitPos.lon];
       const live = a.state === 'dispatched';
-      L.marker(up, { icon: SSMap.unit(live) }).addTo(L_.alert).bindTooltip(`${String(a.unit).replace(/^Highway patrol /, '')}${live ? ` · dispatched · ~${a.etaMin} min` : ' · prepared, not dispatched'}`, { permanent: live, direction: 'top', className: 'tip' });
+      const arrived = a.etaMin === 0;
+      cars.set('u:' + a.unit, up, live ? '#2FD3F5' : '#6AA8FF', { glow: live, z: 900, permanent: live, tip: `${esc(String(a.unit).replace(/^Highway patrol /, ''))}${live ? (arrived ? ' · reached you' : ` · dispatched · ~${a.etaMin} min`) : ' · prepared, not dispatched'}` });
       L.polyline([up, ll], { color: live ? '#5BE38A' : '#6AA8FF', weight: live ? 3 : 2, dashArray: live ? '10 8' : '3 8', className: live ? 'march' : '' }).addTo(L_.alert);
       // Keep both her and the unit comfortably on screen (not at the edge), once per dispatch.
       if (live && fitted !== a.unit) { fitted = a.unit; map.fitBounds(L.latLngBounds([up, ll]), { padding: [90, 90] }); }
     }
+    cars.sweep();
   }
 
   // ---------- places (OSM) ----------
@@ -300,7 +334,7 @@
   const factLine = (f) => `<div class="fact ${f.answer}"><span class="ans">${{ yes: 'YES', no: 'NO', unknown: '?' }[f.answer]}</span><span>“${esc(f.quote)}”<small>“${esc(f.question)}” · ${f.via === 'agent' ? `<b class="m2m">its AI agent · machine-to-machine · ${f.ms} ms · signed</b>` : 'by phone'} ${fmtT(f.collectedAt)} · valid till ${fmtT(f.expiresAt)}</small></span></div>`;
   async function loadStops(force) {
     if (!here) return;
-    const k = `${here.lat.toFixed(3)},${here.lon.toFixed(3)}`;
+    const k = `${here.lat.toFixed(2)},${here.lon.toFixed(2)}`;
     if (stopsFor === k && !force) return;
     stopsFor = k;
     const r = await (await fetch(`/api/stops?lat=${here.lat}&lon=${here.lon}`)).json();

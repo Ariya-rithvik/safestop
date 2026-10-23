@@ -13,6 +13,8 @@ const SAFESTOP = process.env.SAFESTOP_URL ?? 'http://localhost:8790';
 let cached: { keys: any[] } | null = null;
 const desk = createDesk({
   port: Number(process.env.PATROL_PORT ?? 8792),
+  // Demo only: how much faster than real time the simulated unit drives (default 1 = real time).
+  simSpeed: Number(process.env.PATROL_SIM_SPEED ?? 1),
   token: process.env.AUTHORITY_TOKEN || undefined,
   webDir: 'patrol',
   units: unitsOnRoute(JSON.parse(readFileSync('evals/route-krishnagiri-vellore.json', 'utf8')).coordinates),

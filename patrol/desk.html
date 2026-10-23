@@ -6,7 +6,7 @@
 <title>Highway Patrol Desk (SIMULATED)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-  #map { height: 280px; border-radius: 12px; border: 1px solid var(--line); }
+  #map { height: 340px; border-radius: 12px; border: 1px solid var(--line); }
   :root { --bg: #0D1117; --panel: #161B22; --line: #30363D; --text: #E6EDF3; --muted: #9DA7B3; --blue: #58A6FF; --green: #3FB950; --amber: #D29922; --red: #F85149; color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif; }
@@ -26,6 +26,11 @@
   button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
   code { font-size: 12px; color: var(--muted); }
   a { color: var(--blue); }
+  .car-m { transition: transform 0.9s linear; } .leaflet-zoom-anim .car-m { transition: none; }
+  .car { display: block; width: 34px; height: 34px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.7)); } .car svg { width: 20px; height: 34px; display: block; margin: 0 auto; }
+  .car.glow { filter: drop-shadow(0 0 8px var(--c)) drop-shadow(0 2px 4px rgba(0,0,0,.7)); }
+  .leaflet-tooltip.tip { font-weight: 700; background: #0D1117; color: #E6EDF3; border-color: #30363D; }
+  #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.45); }
 </style>
 </head>
 <body>
@@ -41,16 +46,42 @@
 (() => {
   const map = SSMap.create('map', [12.75, 78.75], 9);
   SSMap.route(map);
-  fetch('/desk/units').then((r) => r.json()).then(({ units }) => units.forEach((u) => L.marker([u.lat, u.lon], { icon: SSMap.pin('#58A6FF', u.id.split('-')[1]) }).addTo(map).bindTooltip(u.name)));
-  const caseMarkers = new Map();
+  // Units and cases are cars that keep their marker, so a dispatched unit visibly drives to her.
+  const cars = SSMap.fleet(map);
+  const units = new Map();
+  const drawUnits = () => {
+    const busy = new Map();
+    for (const c of cases.values()) if (c.prepared && !c.closed) busy.set(c.prepared.unit.id, c);
+    for (const u of units.values()) {
+      const c = busy.get(u.id), live = c?.decision?.kind === 'dispatch';
+      const p = live ? c.prepared.unit : u;
+      cars.set('u:' + u.id, [p.lat, p.lon], live ? '#2FD3F5' : '#58A6FF', { glow: live, z: 900, permanent: live, tip: `${u.id}${live ? (c.arrived ? ' · reached her' : ` · driving · ${c.prepared.distanceKm} km · ~${c.prepared.etaMin} min`) : c ? ' · prepared' : ' · on patrol'}` });
+    }
+    for (const c of cases.values()) {
+      const [lat, lon] = c.alert.info.area.circle[0].split(' ')[0].split(',').map(Number);
+      cars.set('case:' + c.alert.identifier, [lat, lon], c.closed ? '#7D8896' : '#F85149', { glow: !c.closed, z: 1000, permanent: !c.closed, tip: c.closed ? 'closed' : 'Traveller (alert)' });
+    }
+    cars.sweep();
+  };
+  fetch('/desk/units').then((r) => r.json()).then(({ units: us }) => { us.forEach((u) => units.set(u.id, u)); drawUnits(); });
+  const seenCase = new Set();
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const cases = new Map();
   const es = new EventSource('/desk/events');
   es.onmessage = (ev) => {
-    const c = JSON.parse(ev.data); cases.set(c.alert.identifier, c); render();
-    const [lat, lon] = c.alert.info.area.circle[0].split(' ')[0].split(',').map(Number);
-    if (!caseMarkers.has(c.alert.identifier)) { caseMarkers.set(c.alert.identifier, L.marker([lat, lon], { icon: SSMap.dot('#F85149', 20) }).addTo(map)); map.setView([lat, lon], 11); }
-    caseMarkers.get(c.alert.identifier).bindTooltip(c.alert.info.headline + (c.decision ? ' · ' + c.decision.note : ' · officer deciding'));
+    const c = JSON.parse(ev.data);
+    const prev = cases.get(c.alert.identifier);
+    cases.set(c.alert.identifier, c);
+    // Re-render the case cards only when something an officer reads changed (not on every unit step).
+    const sig = (x) => x && JSON.stringify([x.closed, x.decision, x.arrived, x.alert.info.headline, x.alert.msgType, x.prepared?.unit.id]);
+    if (sig(prev) !== sig(c)) render();
+    drawUnits();
+    if (!seenCase.has(c.alert.identifier)) {
+      seenCase.add(c.alert.identifier);
+      const [lat, lon] = c.alert.info.area.circle[0].split(' ')[0].split(',').map(Number);
+      const pts = [[lat, lon]]; if (c.prepared) pts.push([c.prepared.unit.lat, c.prepared.unit.lon]);
+      map.fitBounds(L.latLngBounds(pts), { padding: [60, 60], maxZoom: 13 });
+    }
   };
   const decide = (identifier, kind) => fetch('/desk/decide', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identifier, kind }) });
   function render() {

@@ -16,6 +16,7 @@ Priya drives from Bengaluru to Chennai at 11 pm. Past Krishnagiri, a biker keeps
 - **Escalation ladder:** nobody taps "I'm on it" in 30 s → SafeStop **phones** contacts one by one (CALL-E, in each person's language), and stops at the first "yes". The "yes" becomes a plan: "Meena is coming to you · ~20 min".
 - **Agents act in ms, humans decide:** a signed **CAP 1.2** alert goes over **A2A** to a highway patrol desk agent. It verifies the alert and prepares the nearest unit in about 76–195 ms; only the officer dispatches. (The patrol desk is simulated and clearly labelled.)
 - **Machine first:** if a stop runs its own AI agent, SafeStop skips human language and asks it agent-to-agent (signed, 15–102 ms). Otherwise it phones, once, and shares the answer with every traveller (idea from Local Atlas).
+- **Everyone sees everyone, live:** Priya's car, the family member driving to her ("Meena · 30 m away") and the patrol unit move on every map: hers, each contact's and the desk's. A contact's position is shared only after they say "I'm going to her", and only until the alert closes.
 - **Five roadside playbooks** (waved down, object at windshield, road blocked, "I'm police", being followed). Fixed, reviewed text with no crime claims; 112 and NHAI 1033.
 - **Dead zones:** the SOS waits on the phone ("saved, not sent yet") and goes the moment signal returns.
 - **Nearby relay (opt-in, 1 km, 15 min):** strangers see only a distance band, never her name or position; their offers are marked unverified.

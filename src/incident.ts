@@ -21,6 +21,8 @@ export interface ContactAlert {
   call: { state: CallState; at: number; said: string } | null;
   /** What they said they will do (by phone or by tapping), so she knows what help looks like. */
   plan: { action: 'calling_her' | 'going_there' | 'calling_police' | 'other'; etaMin: number | null; at: number; via: 'call' | 'page' } | null;
+  /** Live position of a contact who is on the way to her (shared by them, only while going there). */
+  pos: { lat: number; lon: number; at: number } | null;
 }
 export interface RelayOffer { id: string; from: string; at: number; text: string }
 export interface EvidenceEntry { at: number; kind: 'trigger' | 'location' | 'note' | 'playbook' | 'contact' | 'relay' | 'resolution' | 'tool' | 'understanding'; text: string; hash: string }
@@ -92,7 +94,7 @@ export function quietSos(opts: { traveller: string; contacts: TrustedContact[]; 
   };
   log(inc, opts.at, 'coordinator', `SOS received (${opts.trigger})`);
   for (const c of opts.contacts) {
-    inc.contacts.push({ contactId: c.id, name: c.name, state: 'sent', sentAt: opts.at, deliveredAt: null, ackAt: null, channel: null, call: null, plan: null });
+    inc.contacts.push({ contactId: c.id, name: c.name, state: 'sent', sentAt: opts.at, deliveredAt: null, ackAt: null, channel: null, call: null, plan: null, pos: null });
     log(inc, opts.at, 'quiet_sos', `alert sent to ${c.name}`);
   }
   const waited = opts.pressedAt && opts.at - opts.pressedAt > 2000 ? `; pressed ${Math.round((opts.at - opts.pressedAt) / 1000)} s earlier with no signal` : '';
@@ -225,7 +227,7 @@ export function incidentView(inc: Incident) {
   return {
     id: inc.id, traveller: inc.traveller, createdAt: inc.createdAt, pressedAt: inc.pressedAt, status: inc.status, trigger: inc.trigger,
     location: inc.location, playbook: inc.playbook ? PLAYBOOKS[inc.playbook] : null,
-    contacts: inc.contacts.map(({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan }) => ({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan })),
+    contacts: inc.contacts.map(({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan, pos }) => ({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan, pos })),
     ladder: inc.ladder, authorities: inc.authorities.map((a) => ({ ...a })), severity: inc.severity, facts: inc.facts, understoodBy: inc.understoodBy,
     relay: inc.relay && { enabled: inc.relay.enabled, expiresAt: inc.relay.expiresAt, notified: inc.relay.notified, offers: inc.relay.offers, label: 'Unverified' as const },
     timeline: inc.timeline.slice(-40), resolvedAt: inc.resolvedAt, safeConfirmedAt: inc.safeConfirmedAt,

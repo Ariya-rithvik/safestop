@@ -142,6 +142,16 @@ export class Store {
     return !!o;
   }
 
+  /** A contact on the way shares where they are, so she can watch them come (only while their plan is "going to her"). */
+  contactWhere(token: string, loc: { lat: number; lon: number }): void {
+    const c = this.profile.contacts.find((x) => x.token === token);
+    const inc = this.current();
+    const a = inc?.contacts.find((x) => x.contactId === c?.id);
+    if (!inc || inc.status !== 'open' || !a || a.plan?.action !== 'going_there') return;
+    a.pos = { lat: loc.lat, lon: loc.lon, at: this.now() };
+    this.publish(inc);
+  }
+
   plan(token: string, action: 'calling_her' | 'going_there' | 'calling_police' | 'other', etaMin: number | null): Incident | null {
     const c = this.profile.contacts.find((x) => x.token === token);
     const inc = this.current();

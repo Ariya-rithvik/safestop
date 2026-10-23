@@ -2,6 +2,8 @@
 
 **Screens (one laptop, side by side):** traveller console (left, big), Meena's contact page (right top), patrol desk (right bottom). Your phone ready for the CALL-E call, if you have credit.
 
+**Automated take (what we submitted):** with the three servers running (`PATROL_SIM_SPEED=6` for the desk, `DRY_RUN=1` for SafeStop), `npm run demo:record` drives the real app in Chrome via Playwright, narrates with Amazon Polly (Kajal), and composites `demo/safestop-demo.mp4` (about 2:04) with ffmpeg. Keys and tokens live only in URLs, and a recorded page has no address bar.
+
 **Start everything (four terminals):**
 ```
 npm run patrol
