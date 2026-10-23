@@ -52,6 +52,7 @@
       <div id="where"></div>
       <div class="block-head" style="margin-top:12px"><h2>What she's facing</h2></div>
       <div id="situation"></div>
+      <div id="prebrief"></div>
       <div class="block-head" style="margin-top:12px"><h2>Who else knows</h2></div>
       <ul class="tracker" id="chain"></ul>
     </section>
@@ -184,7 +185,9 @@
   }
 
   const steps = (n) => `<span class="steps3">${[0, 1, 2].map((i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
-  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'] };
+  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'], prebrief: ['Pre-brief A2A', '#B9F27C'] };
+  const prebriefCard = (pb) => !pb ? '' : `<div class="prebrief"><p class="eyebrow">⚡ Ready before anyone looked · agent ↔ agent · ${pb.ms} ms</p>${pb.best ? `<b>Nearest open${pb.best.staffed === 'yes' ? ', staffed' : ''} stop: ${esc(pb.best.name)}, ${(pb.best.distanceM / 1000).toFixed(1)} km</b><small>Its own AI agent said: “${esc(pb.best.quote)}” · signed · no phone rang</small>` : '<b>No stop agent confirmed it is open.</b>'}<small>Asked ${pb.asked} ${pb.asked === 1 ? 'stop' : 'stops'} with their own agent, in machine language, the moment the alert opened.</small></div>`;
+
   let tick = null;
   function render() {
     const inc = incident;
@@ -222,6 +225,7 @@
       : '<p class="muted">No location shared yet.</p>';
     const facts = Object.entries(inc.facts || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${esc(v)}`).join(' · ');
     $('situation').innerHTML = inc.playbook ? `<p style="margin:0"><b>${esc(inc.playbook.title)}</b>${inc.severity ? ` <span class="tag">${esc(inc.severity)}</span>` : ''}</p>${facts ? `<p class="muted" style="margin:4px 0">${facts}</p>` : ''}<p class="faint">She was told: ${esc(inc.playbook.say)}</p>` : '<p class="muted">Not said yet.</p>';
+    $('prebrief').innerHTML = open ? prebriefCard(inc.prebrief) : '';
     $('chain').innerHTML = inc.contacts.map((c) => {
       const n = c.state === 'acknowledged' ? 3 : c.state === 'delivered' ? 2 : 1;
       const call = c.call ? { calling: 'phoning now', heard: 'heard the call, no yes', no_answer: "didn't answer", failed: 'call failed', confirmed: 'said yes on the call', dry_run: 'would be phoned (dry run)' }[c.call.state] : '';

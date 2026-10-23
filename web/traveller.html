@@ -83,6 +83,7 @@
       <div class="block-head"><h2>Who knows</h2><span class="faint">sent · reached · on it</span></div>
       <div id="ladder"></div>
       <ul class="tracker" id="chain"></ul>
+      <div id="prebrief"></div>
       <div id="playbook"></div>
       <div class="block-head" style="margin-top:14px"><h2>Nearby travellers</h2><span class="tag unverified">Unverified</span></div>
       <label class="switch"><span>Ask SafeStop users within 1 km for 15 min. They never see your name or exact position.</span><input type="checkbox" id="relay"></label>
@@ -375,7 +376,9 @@
   }
 
   // ---------- render incident ----------
-  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'] };
+  const AGENT = { coordinator: ['Coordinator', '#A9B4C2'], quiet_sos: ['Quiet SOS', '#FF5A4E'], safety_triage: ['Triage', '#FFC247'], understanding: ['Understanding', '#C6A8FF'], contact: ['Contact', '#6AA8FF'], escalation: ['Escalation', '#FF8B7B'], nearby_relay: ['Nearby relay', '#FFC247'], evidence: ['Evidence', '#7D8896'], resolution: ['Resolution', '#5BE38A'], policy: ['Policy', '#63D6C6'], authority: ['Authority A2A', '#2FD3F5'], prebrief: ['Pre-brief A2A', '#B9F27C'] };
+  const prebriefCard = (pb) => !pb ? '' : `<div class="prebrief"><p class="eyebrow">⚡ Ready before anyone looked · agent ↔ agent · ${pb.ms} ms</p>${pb.best ? `<b>Nearest open${pb.best.staffed === 'yes' ? ', staffed' : ''} stop: ${esc(pb.best.name)}, ${(pb.best.distanceM / 1000).toFixed(1)} km</b><small>Its own AI agent said: “${esc(pb.best.quote)}” · signed · no phone rang</small>` : '<b>No stop agent confirmed it is open.</b>'}<small>Asked ${pb.asked} ${pb.asked === 1 ? 'stop' : 'stops'} with their own agent, in machine language, the moment the alert opened.</small></div>`;
+
   const steps = (n, labels) => `<span class="steps3">${labels.map((l, i) => `<i class="${i < n ? 'on' : ''}" title="${l}"></i>`).join('')}</span>`;
   const planText = (p) => !p ? '' : ({ calling_her: 'will call you', going_there: 'is coming to you', calling_police: 'is calling the police', other: 'is helping' }[p.action] + (p.etaMin != null ? ` · ~${p.etaMin} min` : ''));
   const contactRow = (c) => {
@@ -428,6 +431,7 @@
       $('outbox').innerHTML = pending.length ? $('outbox').innerHTML : `<div class="closed">${inc.safeConfirmedAt ? 'Last alert closed · you confirmed you are safe.' : `Last alert ${esc(inc.status)}.`} <a href="/report#${encodeURIComponent(key)}">Your private incident report</a></div>`;
     }
     $('chain').innerHTML = inc.contacts.map(contactRow).join('') + (inc.authorities || []).map(authRow).join('');
+    $('prebrief').innerHTML = open ? prebriefCard(inc.prebrief) : '';
     const p = inc.playbook;
     $('playbook').innerHTML = open ? (p
       ? `<div class="playbook"><p class="eyebrow">Do this now</p><p class="say-now">${esc(p.say)}</p><ol>${p.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol><div class="calls">${p.call.map((c) => `<a class="${c.number === '112' ? 'e' : ''}" href="tel:${c.number}">Call ${c.number}</a>`).join('')}</div></div>`

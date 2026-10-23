@@ -52,6 +52,9 @@ body.alerting .vignette { animation: edge 1.6s ease-in-out infinite alternate; }
 .car-m { transition: transform 0.9s linear; }
 .leaflet-zoom-anim .car-m, .leaflet-dragging .car-m { transition: none; }
 .sim-drive { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #1a1200; background: #FFC247; border-radius: 5px; padding: 1px 6px; }
+.prebrief { margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(185, 242, 124, 0.45); background: rgba(185, 242, 124, 0.08); display: grid; gap: 3px; }
+.prebrief .eyebrow { color: #B9F27C; margin: 0; }
+.prebrief small { color: #9AA6B6; display: block; }
 .march { animation: march 0.9s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -18; } }
 .leaflet-tooltip, .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #0E141C; color: #E6EDF3; border: 1px solid var(--edge); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }

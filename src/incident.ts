@@ -3,7 +3,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { PLAYBOOKS, triage, type PlaybookId } from './playbooks.js';
 
-export const AGENTS = ['coordinator', 'quiet_sos', 'safety_triage', 'contact', 'escalation', 'nearby_relay', 'evidence', 'resolution', 'policy', 'understanding', 'authority'] as const;
+export const AGENTS = ['coordinator', 'quiet_sos', 'safety_triage', 'contact', 'escalation', 'nearby_relay', 'evidence', 'resolution', 'policy', 'understanding', 'authority', 'prebrief'] as const;
 export type Agent = (typeof AGENTS)[number];
 
 /** Honest delivery states: "sent" (we pushed it), "delivered" (their screen received it), "acknowledged" (they tapped). */
@@ -47,6 +47,8 @@ export interface Incident {
   understoodBy: string | null;
   /** Authority agents (A2A) that received the signed CAP alert, and what their humans decided. */
   authorities: import('./authority.js').AuthorityLink[];
+  /** What agents asked other agents before any human looked (nearest open, staffed stop). */
+  prebrief?: import('./prebrief.js').Prebrief | null;
   evidence: EvidenceEntry[];
   timeline: { at: number; agent: Agent; text: string }[];
   resolvedAt: number | null;
@@ -228,7 +230,7 @@ export function incidentView(inc: Incident) {
     id: inc.id, traveller: inc.traveller, createdAt: inc.createdAt, pressedAt: inc.pressedAt, status: inc.status, trigger: inc.trigger,
     location: inc.location, playbook: inc.playbook ? PLAYBOOKS[inc.playbook] : null,
     contacts: inc.contacts.map(({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan, pos }) => ({ contactId, name, state, sentAt, deliveredAt, ackAt, channel, call, plan, pos })),
-    ladder: inc.ladder, authorities: inc.authorities.map((a) => ({ ...a })), severity: inc.severity, facts: inc.facts, understoodBy: inc.understoodBy,
+    ladder: inc.ladder, authorities: inc.authorities.map((a) => ({ ...a })), prebrief: inc.prebrief ?? null, severity: inc.severity, facts: inc.facts, understoodBy: inc.understoodBy,
     relay: inc.relay && { enabled: inc.relay.enabled, expiresAt: inc.relay.expiresAt, notified: inc.relay.notified, offers: inc.relay.offers, label: 'Unverified' as const },
     timeline: inc.timeline.slice(-40), resolvedAt: inc.resolvedAt, safeConfirmedAt: inc.safeConfirmedAt,
     evidence: { entries: inc.evidence.length, intact: verifyEvidence(inc) },

@@ -16,6 +16,7 @@ import { Policy } from './policy.js';
 import type { Llm } from './understand.js';
 import { makeSigner, type CapStatus } from './cap.js';
 import { attachAuthorities } from './authority.js';
+import { attachPrebrief } from './prebrief.js';
 import { TEMPLATES, type Facts, type TemplateId } from './facts.js';
 import { readFileSync as readSync, existsSync as exists } from 'node:fs';
 
@@ -211,6 +212,7 @@ export function createApp(opts: AppOptions) {
   // ---- live screens ----
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
   const travellers = new Set<WebSocket>();
+  if (opts.facts) attachPrebrief(store, opts.facts, { log });
   if (opts.facts) opts.facts.onFact = (f) => { for (const ws of travellers) send(ws, { t: 'fact', fact: f }); };
   const contacts = new Map<WebSocket, string>(); // ws -> contactId
   const helpers = new Map<WebSocket, string>(); // ws -> helperId

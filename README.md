@@ -115,6 +115,9 @@ A contact saying "yes" is not enough for someone stuck on a highway; she needs t
 - **She sees it:** "Meena is coming to you · ~20 min", and Alexa says the same when she asks "did anyone see it?".
 - **Per-person calling rules:** each contact can be called in their own language (`CONTACT_LANGS=Ravi:ta-IN`), and only a contact who acknowledged can set a plan.
 
+## Ready before any human looks (pre-brief agent)
+The moment an alert opens, `src/prebrief.ts` asks every nearby stop that runs its own AI agent, machine to machine (`safestop.stopquery/1`, signed), "open now?" and "someone on site?". It never phones anyone: phoning stays a deliberate, one-at-a-time choice. Measured live: 121 ms, before her family's screens were even opened.
+
 ## Everyone sees everyone on the map
 - Priya's car, red while the alert is open, rotated to her heading.
 - Each contact who taps "I'm going to her" can share their position. It shows as a green car with a live distance ("Meena · 30 m away") on her map, on every contact's map and in the tracker. It is shared only after that choice, and only while the alert is open (`store.contactWhere`).

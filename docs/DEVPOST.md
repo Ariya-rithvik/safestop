@@ -1,7 +1,7 @@
 # Devpost submission text: SafeStop Relay Network
 
 **Track:** Alexa+ (self-hosted MCP server + Agent Skill + simulated Alexa+ web app)
-**Repo:** https://github.com/Ariya-rithvik/safestop (fill in after pushing)
+**Repo:** https://github.com/Ariya-rithvik/safestop
 **Video:** (YouTube link)
 
 ## Tagline
@@ -15,6 +15,7 @@ Priya drives from Bengaluru to Chennai at 11 pm. Past Krishnagiri, a biker keeps
 - **Honest states:** Sent → reached their screen → on it. Alexa says exactly that; it never says "help is on the way" unless someone acknowledged.
 - **Escalation ladder:** nobody taps "I'm on it" in 30 s → SafeStop **phones** contacts one by one (CALL-E, in each person's language), and stops at the first "yes". The "yes" becomes a plan: "Meena is coming to you · ~20 min". *Tested live: CALL-E declines emergency calls by policy (friction log #9). SafeStop reports "call failed → call 112" and never disguises the call. The video shows the ladder as a labelled dry run.*
 - **A real AI phone call where it is allowed:** a stop without its own agent is phoned **once** by CALL-E ("Are you open right now?"). The exact words and time are saved and shared with every traveller. This ran live in the video: "Yes, of course."
+- **Ready before any human looks:** the moment the alert opens, a pre-brief agent asks every nearby stop that runs its own AI agent, in machine language, "open now?" and "someone on site?". No phone rings and nobody is disturbed. In about 120 ms, her screen, her family's and the desk's show "Nearest open, staffed stop: Indian Oil, 1.0 km", with the stop agent's signed words.
 - **Machine language between agents, plain words for people:** police can't talk at machine speed, so the desk runs a **scoped** agent (verify · prepare · brief; it can never dispatch). The desk's "Machine channel" shows the real A2A JSON-RPC messages (signed CAP, replies in a few ms), and the agent then **speaks** a plain brief to the officer.
 - **Agents act in ms, humans decide:** a signed **CAP 1.2** alert goes over **A2A** to a highway patrol desk agent. It verifies the alert and prepares the nearest unit in about 76–195 ms; only the officer dispatches. (The patrol desk is simulated and clearly labelled.)
 - **Machine first:** if a stop runs its own AI agent, SafeStop skips human language and asks it agent-to-agent (signed, 15–102 ms). Otherwise it phones, once, and shares the answer with every traveller (idea from Local Atlas).
