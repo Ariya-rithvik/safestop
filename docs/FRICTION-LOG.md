@@ -47,6 +47,18 @@ Each entry: task, steps, expected vs actual, severity, workaround, suggestion.
 - **Actual:** Gemini 2.5 Flash returned 429 after about 6 rapid calls, which dragged an eval run down to rules-only answers.
 - **Workaround:** pause Gemini for 60 s after a 429 and go straight to the Groq fallback; pace evals.
 
+## 8. CALL-E: `result_schema` rejects nullable types
+- **Task:** first live escalation call with the new key (2026-10-23).
+- **Actual:** `400 result_schema_invalid: unsupported JSON Schema type at $.properties.eta_min: ['integer', 'null']`. The call never left, in the middle of an alert.
+- **Severity:** high: a schema detail silently breaks a safety call at the worst moment.
+- **Workaround:** `eta_min` is now a plain optional `integer`; SafeStop marked the call failed and moved down the ladder, as designed.
+- **Suggestion:** validate `result_schema` at key-setup time (or a `POST /v1/schemas/validate`), and document the supported JSON Schema subset.
+
+## 9. CALL-E declines emergency calls by policy
+- **Actual:** `422 call_not_ready: I can't place calls for urgent or emergency safety situations. Please contact local emergency services or a trusted person.`
+- **What we did:** we did **not** reword the task to get around this. The escalation ladder records "call failed" and tells her to call 112, the same as any failed call. CALL-E is still used where it fits: one non-emergency question to a stop ("Are you open right now?"), answered once and shared with every traveller. That call ran live in our video.
+- **Suggestion:** document the policy up front, and offer a vetted path for safety apps (for example, verified trusted-contact calls with the user's consent on file).
+
 ## What worked well
 - The MCP SDK client + server pair: the official client drove every end-to-end test.
 - The A2A SDK's task model maps cleanly onto "agent acts in ms, human decides later".

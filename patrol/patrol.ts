@@ -46,6 +46,13 @@ export function createDesk(opts: { simSpeed?: number; tickMs?: number; port: num
   const cases = new Map<string, DeskCase>(); // by CAP identifier
   const listeners = new Set<(c: DeskCase) => void>();
   const changed = (c: DeskCase) => listeners.forEach((f) => f(c));
+  // The machine channel, as it really went over the wire (A2A JSON-RPC), for the officer's console.
+  type Wire = { at: number; dir: 'in' | 'out'; method: string; bytes: number; ms?: number; text: string };
+  const wire: Wire[] = [];
+  const wireListeners = new Set<(w: Wire) => void>();
+  const lastPoll = new Map<string, string>();
+  const pushWire = (w: Wire) => { wire.push(w); if (wire.length > 60) wire.shift(); wireListeners.forEach((f) => f(w)); };
+  const short = (v: unknown): unknown => typeof v === 'string' && v.length > 48 ? `${v.slice(0, 36)}…(${v.length} chars)` : Array.isArray(v) ? v.map(short) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, short(x)])) : v;
   const taskStore = new InMemoryTaskStore();
 
   const card: AgentCard = {
@@ -165,6 +172,32 @@ export function createDesk(opts: { simSpeed?: number; tickMs?: number; port: num
   }
 
   const app = express();
+  // Log the agent-to-agent traffic (method, size, time, a trimmed copy). Repeated polls with no news are skipped.
+  app.use((req, res, next) => {
+    if (req.method !== 'POST' || req.path !== '/') return next();
+    express.json({ limit: '1mb' })(req, res, () => {
+      const t0 = performance.now();
+      const body = req.body ?? {};
+      const method = String(body.method ?? '?');
+      const reqText = JSON.stringify(short(body.params ?? {}));
+      const json = res.json.bind(res);
+      res.json = (out: any) => {
+        const ms = Math.round(performance.now() - t0);
+        const r = out?.result?.task ?? out?.result ?? out;
+        const st = r?.status?.state ?? r?.task?.status?.state ?? '';
+        const data = (r?.status?.message?.parts ?? []).map((p: any) => p?.data?.data ?? p?.data ?? p?.content?.value).find((x: any) => x && typeof x === 'object');
+        const resText = JSON.stringify(short({ state: st, stage: data?.stage, unit: data?.prepared?.unit?.id, etaMin: data?.prepared?.etaMin, decision: data?.decision?.kind }));
+        const pollKey = /get/i.test(method) ? String(body.params?.id ?? '') : '';
+        if (!pollKey || lastPoll.get(pollKey) !== resText) {
+          if (pollKey) lastPoll.set(pollKey, resText);
+          pushWire({ at: Date.now(), dir: 'in', method, bytes: Buffer.byteLength(JSON.stringify(body)), text: reqText });
+          pushWire({ at: Date.now(), dir: 'out', method, bytes: Buffer.byteLength(JSON.stringify(out ?? {})), ms, text: resText });
+        }
+        return json(out);
+      };
+      next();
+    });
+  });
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler }));
   // Agent-to-agent calls need the shared token (plus the JWS signature on every alert).
   app.use((req, res, next) => {
@@ -184,6 +217,15 @@ export function createDesk(opts: { simSpeed?: number; tickMs?: number; port: num
     for (const c of cases.values()) push(c);
     listeners.add(push);
     req.on('close', () => listeners.delete(push));
+  });
+  app.get('/desk/wire', (req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+    const push = (w: Wire) => res.write(`data: ${JSON.stringify(w)}
+
+`);
+    for (const w of wire) push(w);
+    wireListeners.add(push);
+    req.on('close', () => wireListeners.delete(push));
   });
   app.post('/desk/decide', express.json({ limit: '2kb' }), async (req, res) => {
     const { identifier, kind } = req.body ?? {};

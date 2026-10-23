@@ -48,7 +48,7 @@ const demoPhone = (process.env.CALLE_ALLOWED_NUMBERS ?? '').split(',')[0]?.trim(
 // Stops that run their own AI agent (STOP_AGENTS=<stopId>=<url>,...) are asked agent-to-agent first.
 const stopAgents = new Map((process.env.STOP_AGENTS ?? '').split(',').map((x) => { const i = x.indexOf('='); return [x.slice(0, i).trim(), x.slice(i + 1).trim()] as [string, string]; }).filter(([k, v]) => k && v));
 const facts = new Facts(demoStops(join(root, 'evals', 'stops-vellore-nominatim.json'), demoPhone).map((s) => (stopAgents.has(s.id) ? { ...s, agentUrl: stopAgents.get(s.id) } : s)), caller, {
-  file: join(dataDir, 'facts.json'), dailyCap: Number(process.env.STOP_CALLS_PER_DAY ?? 10), log: (m) => console.log(`[stops] ${m}`),
+  file: join(dataDir, 'facts.json'), dailyCap: Number(process.env.STOP_CALLS_PER_DAY ?? 10), demoAnytime: process.env.DEMO_STOP_CALLS_ANYTIME === '1', log: (m) => console.log(`[stops] ${m}`),
 });
 
 const port = Number(process.env.PORT ?? 8790);

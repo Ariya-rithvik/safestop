@@ -6,6 +6,16 @@
 <title>Highway Patrol Desk (SIMULATED)</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
+  main.top { grid-template-columns: 1.1fr 1fr; align-items: stretch; }
+  .wire { background: #0A0F14; border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 340px; max-height: 340px; overflow: hidden; }
+  .wire-head { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; font-size: 13px; } .wire-head span { color: var(--muted); font-size: 12px; }
+  #wire { list-style: none; margin: 0; padding: 6px 10px; overflow-y: auto; flex: 1; font: 12px/1.45 ui-monospace, Consolas, monospace; }
+  #wire li { padding: 3px 0; border-bottom: 1px dashed #1c232c; animation: wirein .35s ease-out; } #wire li b { font-weight: 700; }
+  #wire .in b { color: #2FD3F5; } #wire .out b { color: #3FB950; } #wire .ms { color: #FFC247; font-weight: 700; } #wire code { color: #9DA7B3; word-break: break-all; }
+  @keyframes wirein { from { background: rgba(47, 211, 245, .18); } }
+  .wire-foot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .brief { border: 1px solid #1f4d80; background: #0d1a2a; border-radius: 10px; padding: 10px 12px; } .brief p { margin: 4px 0 0; }
+  .brief .scope { font-size: 12px; color: var(--muted); }
   #map { height: 340px; border-radius: 12px; border: 1px solid var(--line); }
   :root { --bg: #0D1117; --panel: #161B22; --line: #30363D; --text: #E6EDF3; --muted: #9DA7B3; --blue: #58A6FF; --green: #3FB950; --amber: #D29922; --red: #F85149; color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -38,7 +48,12 @@
   <h1>Highway Patrol Desk</h1>
   <span class="sim">SIMULATED · demo authority · not connected to real police</span>
 </header>
-<main><div id="map" role="img" aria-label="Map of patrol units and alerts"></div></main>
+<main class="top"><div id="map" role="img" aria-label="Map of patrol units and alerts"></div>
+  <section class="wire" aria-label="Machine channel">
+    <div class="wire-head"><b>Machine channel</b><span>A2A JSON-RPC · signed CAP 1.2 · agent ↔ agent</span></div>
+    <ol id="wire"><li class="muted">Quiet. When SafeStop's agent sends an alert, every message appears here as it crossed the wire.</li></ol>
+    <div class="wire-foot" id="wireFoot">Officers can't talk at machine speed, so this desk runs a <b>scoped</b> agent: it may verify, prepare and brief. Only the officer dispatches.</div>
+  </section></main>
 <main id="cases"><p class="muted">Waiting for alerts from SafeStop (A2A, signed CAP 1.2)…</p></main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/desk/map.js"></script>
@@ -67,6 +82,24 @@
   const seenCase = new Set();
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const cases = new Map();
+  // Machine channel: what the two agents actually exchanged.
+  const wireEl = document.getElementById('wire');
+  let wireFirst = true;
+  new EventSource('/desk/wire').onmessage = (ev) => {
+    const w = JSON.parse(ev.data);
+    if (wireFirst) { wireEl.innerHTML = ''; wireFirst = false; }
+    const t = new Date(w.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const who = w.dir === 'in' ? 'SafeStop agent → desk agent' : 'desk agent → SafeStop agent';
+    wireEl.insertAdjacentHTML('beforeend', `<li class="${w.dir}"><b>${w.dir === 'in' ? '⇢' : '⇠'} ${esc(w.method)}</b> <span class="muted">${who} · ${t} · ${w.bytes} B</span>${w.ms != null ? ` <span class="ms">${w.ms} ms</span>` : ''}<br><code>${esc(w.text)}</code></li>`);
+    while (wireEl.children.length > 40) wireEl.firstChild.remove();
+    wireEl.scrollTop = wireEl.scrollHeight;
+  };
+  // The scoped agent's spoken brief for the officer (plain words, from the verified alert only).
+  window.briefFor = (c) => {
+    const i = c.alert.info, p = c.prepared;
+    const details = (i.description.match(/Details: ([^.]*)/) || [])[1];
+    return `New signed alert, signature verified. ${i.headline}.${details ? ` ${details.replace(/;/g, ',')}.` : ''} ${p ? `Nearest unit ${p.unit.id}, about ${p.etaMin} minutes away, is prepared.` : 'No unit nearby.'} Dispatch is your decision.`;
+  };
   const es = new EventSource('/desk/events');
   es.onmessage = (ev) => {
     const c = JSON.parse(ev.data);
@@ -93,6 +126,7 @@
         <div class="row"><h3>${esc(i.headline)}</h3><span class="pill sev">${esc(i.severity)}</span><span class="pill">${esc(a.status)}</span><span class="pill ${c.verified ? 'ok' : ''}">${c.verified ? 'signature verified' : 'unverified'}</span><span class="pill">certainty: ${esc(i.certainty)}</span>${c.closed ? '<span class="pill ok">closed by traveller side</span>' : ''}</div>
         <div class="muted">${esc(i.description)}</div>
         <div class="muted">Position ${esc(ll)} · <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}" target="_blank" rel="noopener">map</a> · received ${new Date(c.receivedAt).toLocaleTimeString()} · <code>${esc(a.identifier)}</code></div>
+        ${c.closed || d ? '' : `<div class="brief"><b>🔊 Agent brief</b> <button class="speak" data-brief="${esc(a.identifier)}" style="min-height:30px;padding:3px 10px;font-size:13px">Speak</button><p>${esc(briefFor(c))}</p><p class="scope">Agent scope: verify · prepare · brief. It cannot dispatch, call or decline. Only you can.</p></div>`}
         <div class="agent"><b>Agent (instant):</b> verified the alert and prepared ${p ? `<b>${esc(p.unit.name)}</b>, about ${p.distanceKm} km, ${p.etaMin} min` : 'no unit'}.</div>
         <div class="human"><b>Officer (you):</b> ${d ? esc(d.note) + ' <span class="muted">' + new Date(d.at).toLocaleTimeString() + '</span>' : 'not decided yet'}</div>
         ${c.closed || (d && d.kind !== 'call') ? '' : `<div class="row">
@@ -102,6 +136,7 @@
       </section>`;
     }).join('') || '<p class="muted">No alerts.</p>';
     document.querySelectorAll('button[data-k]').forEach((b) => (b.onclick = () => decide(b.dataset.id, b.dataset.k)));
+    document.querySelectorAll('button[data-brief]').forEach((b) => (b.onclick = () => { const u = new SpeechSynthesisUtterance(briefFor(cases.get(b.dataset.brief))); speechSynthesis.cancel(); speechSynthesis.speak(u); }));
   }
 })();
 </script>

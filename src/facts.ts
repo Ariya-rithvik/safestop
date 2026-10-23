@@ -83,8 +83,10 @@ export function vetQuestion(q: string): string | null {
 const istHour = (ms: number) => new Date(ms + 5.5 * 3_600_000).getUTCHours();
 
 /** May we phone this stop now? (pure; tested) */
-export function callWindow(stop: Stop, now: number): string | null {
+export function callWindow(stop: Stop, now: number, demoAnytime = false): string | null {
   if (stop.hours === '24/7') return null;
+  // A demo registration is answered by our own test phone, not station staff: quiet hours may be relaxed for it.
+  if (demoAnytime && stop.optIn === 'demo') return null;
   const h = istHour(now);
   return h >= 10 && h < 21 ? null : 'It is outside 10 am - 9 pm at this stop and it has not said it is open 24 hours, so SafeStop will not ring it now.';
 }
@@ -134,7 +136,7 @@ export class Facts {
   constructor(
     readonly stops: Stop[],
     private caller: Caller,
-    private o: { file?: string; dailyCap?: number; now?: () => number; settleMs?: number; pollMs?: number; maxCallMs?: number; log?: (m: string) => void; onFact?: (f: Fact) => void } = {},
+    private o: { file?: string; dailyCap?: number; now?: () => number; settleMs?: number; pollMs?: number; maxCallMs?: number; log?: (m: string) => void; demoAnytime?: boolean; onFact?: (f: Fact) => void } = {},
   ) {
     if (o.file && existsSync(o.file)) {
       try {
@@ -198,7 +200,7 @@ export class Facts {
       }
       // No agent, no such skill, unreachable, or the answer did not verify: fall back to a phone call.
     }
-    const win = callWindow(stop, this.now());
+    const win = callWindow(stop, this.now(), this.o.demoAnytime);
     if (win) return { status: 'refused', reason: win };
     const today = new Date(this.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
     if (this.day.date !== today) this.day = { date: today, used: 0 };

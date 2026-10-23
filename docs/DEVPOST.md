@@ -13,7 +13,9 @@ Priya drives from Bengaluru to Chennai at 11 pm. Past Krishnagiri, a biker keeps
 ## What it does
 - **Quiet SOS:** a harmless safe word to Alexa ("pineapple") or a held button. Her trusted contacts are alerted in **milliseconds**, before any AI runs.
 - **Honest states:** Sent → reached their screen → on it. Alexa says exactly that; it never says "help is on the way" unless someone acknowledged.
-- **Escalation ladder:** nobody taps "I'm on it" in 30 s → SafeStop **phones** contacts one by one (CALL-E, in each person's language), and stops at the first "yes". The "yes" becomes a plan: "Meena is coming to you · ~20 min".
+- **Escalation ladder:** nobody taps "I'm on it" in 30 s → SafeStop **phones** contacts one by one (CALL-E, in each person's language), and stops at the first "yes". The "yes" becomes a plan: "Meena is coming to you · ~20 min". *Tested live: CALL-E declines emergency calls by policy (friction log #9). SafeStop reports "call failed → call 112" and never disguises the call. The video shows the ladder as a labelled dry run.*
+- **A real AI phone call where it is allowed:** a stop without its own agent is phoned **once** by CALL-E ("Are you open right now?"). The exact words and time are saved and shared with every traveller. This ran live in the video: "Yes, of course."
+- **Machine language between agents, plain words for people:** police can't talk at machine speed, so the desk runs a **scoped** agent (verify · prepare · brief; it can never dispatch). The desk's "Machine channel" shows the real A2A JSON-RPC messages (signed CAP, replies in a few ms), and the agent then **speaks** a plain brief to the officer.
 - **Agents act in ms, humans decide:** a signed **CAP 1.2** alert goes over **A2A** to a highway patrol desk agent. It verifies the alert and prepares the nearest unit in about 76–195 ms; only the officer dispatches. (The patrol desk is simulated and clearly labelled.)
 - **Machine first:** if a stop runs its own AI agent, SafeStop skips human language and asks it agent-to-agent (signed, 15–102 ms). Otherwise it phones, once, and shares the answer with every traveller (idea from Local Atlas).
 - **Everyone sees everyone, live:** Priya's car, the family member driving to her ("Meena · 30 m away") and the patrol unit move on every map: hers, each contact's and the desk's. A contact's position is shared only after they say "I'm going to her", and only until the alert closes.
@@ -40,6 +42,7 @@ TypeScript/Node.
 - **Tests:** 44 automated tests.
 
 ## Challenges
+- CALL-E rejected our first live call twice: first a nullable schema type, then its emergency-call policy (friction log #8, #9).
 - The CALL-E balance ran out, and the ladder correctly reported "call failed → call 112".
 - Overpass outages: answered with a cache that labels its age.
 - An early bug showed a signature rejection as "Declined". Fixed: only an officer's choice is "declined".
@@ -66,7 +69,7 @@ A real Alexa+ preview connection; SMS fallback; pilots with a highway patrol uni
   - Worked well: the task lifecycle fits human-in-the-loop.
   - Needs work: see friction log #3.
 
-**AWS:** not used in SafeStop.
+**AWS:** not used in the product. The demo video voices (narrator, Priya, Alexa, desk agent) are Amazon Polly.
 
 ## Feature requests
 - Alexa+ MCP test console (critical).
@@ -74,7 +77,7 @@ A real Alexa+ preview connection; SMS fallback; pilots with a highway patrol uni
 - CALL-E balance API (important).
 
 ## Friction log
-See `docs/FRICTION-LOG.md` (7 entries).
+See `docs/FRICTION-LOG.md` (9 entries).
 
 ## Built during the hackathon
 All of it, 2026-10-18 to 10-23. Earlier projects inspired some parts; no code was copied beyond the CALL-E request pattern from our FloodLens entry.

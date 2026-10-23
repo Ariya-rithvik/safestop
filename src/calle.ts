@@ -38,7 +38,7 @@ export const RESULT_SCHEMA = {
     will_help: { type: 'boolean', description: 'True only if the person clearly said they will help or will call her.' },
     said: { type: 'string', description: 'What the person said in reply, in under 15 words.' },
     action: { type: 'string', enum: ['calling_her', 'going_there', 'calling_police', 'other', 'none'], description: 'What they said they will do. "none" if they will not help or did not say.' },
-    eta_min: { type: ['integer', 'null'], description: 'Minutes until they reach her, only if they are going there and said a time; else null.' },
+    eta_min: { type: 'integer', description: 'Minutes until they reach her, only if they are going there and said a time. Leave it out otherwise.' },
   },
 } as const;
 
